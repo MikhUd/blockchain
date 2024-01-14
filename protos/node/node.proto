@@ -1,0 +1,8 @@
+syntax = "proto3";
+package node;
+option go_package = "github.com/MikhUd/blockchain/protos/node;node";
+
+message PID {
+  string addr = 1;
+  string ID = 2;
+}
