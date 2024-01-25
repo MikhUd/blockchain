@@ -1,0 +1,24 @@
+syntax = "proto3";
+package message;
+option go_package = "example/blockchain";
+
+message PID {
+  string addr = 1;
+}
+
+message BlockchainMessage {
+  bytes data = 1;
+  string typeName = 2;
+}
+
+message TestMessage {
+  bytes data = 1;
+}
+
+message TransactionRequest {
+  string senderPublicKey = 1;
+  string senderBlockchainAddress = 2;
+  string recipientBlockchainAddress = 3;
+  string signature = 4;
+  float value = 5;
+}

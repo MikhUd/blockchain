@@ -31,14 +31,14 @@ func (bcs *BlockchainServer) Port() uint16 {
 }
 
 func (bcs *BlockchainServer) GetBlockchain(cfg config.Config) *blockchain.Blockchain {
-	bc, ok := cache[bcs.port]["blockchain"]
+	bc, ok := cache[bcs.port]["peer_manager"]
 	if cache[bcs.port] == nil {
 		cache[bcs.port] = make(map[string]*blockchain.Blockchain)
 	}
 	if !ok {
 		minersWallet := wallet.New(bcs.config.Version)
 		bc = blockchain.New(minersWallet.BlockchainAddr(), bcs.Port(), cfg)
-		cache[bcs.port]["blockchain"] = bc
+		cache[bcs.port]["peer_manager"] = bc
 	}
 	return bc
 }

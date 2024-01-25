@@ -3,7 +3,9 @@ package utils
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/hex"
+	"github.com/MikhUd/blockchain/internal/domain/public_key"
 	"github.com/MikhUd/blockchain/internal/domain/signature"
 	"math/big"
 )
@@ -35,4 +37,39 @@ func PrivateKeyFromString(s string, publicKey *ecdsa.PublicKey) *ecdsa.PrivateKe
 	var bi big.Int
 	_ = bi.SetBytes(b)
 	return &ecdsa.PrivateKey{PublicKey: *publicKey, D: &bi}
+}
+
+func GenerateRandomSignature() (*signature.Signature, error) {
+	// Генерация случайных байт для R и S
+	randomBytes := make([]byte, 64)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	// Преобразование байт в строки
+	randomHex := hex.EncodeToString(randomBytes)
+
+	// Создание big.Int из строк
+	r, s := String2BigIntTuple(randomHex)
+
+	// Возвращение новой сигнатуры
+	return &signature.Signature{R: &r, S: &s}, nil
+}
+
+func GenerateRandomPublicKey() (*public_key.PublicKey, error) {
+	// Генерация случайных байт для X и Y
+	randomBytes := make([]byte, 64)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	// Преобразование байт в строку
+	randomHex := hex.EncodeToString(randomBytes)
+
+	// Создание *ecdsa.PublicKey из строки
+	pk := PublicKeyFromString(randomHex)
+
+	return &public_key.PublicKey{Curve: pk.Curve, X: pk.X, Y: pk.Y}, nil
 }

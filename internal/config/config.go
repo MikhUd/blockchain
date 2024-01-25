@@ -22,6 +22,12 @@ const (
 	EnvProd  = "prod"
 )
 
+const (
+	Initialized = 0
+	Running     = 1
+	Stopped     = 2
+)
+
 func MustLoad() *Config {
 	path := fetchConfigPath()
 	if path == "" {

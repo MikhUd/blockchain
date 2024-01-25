@@ -1,4 +1,4 @@
-package blockchain_node
+package peer_manager
 
 import (
 	"google.golang.org/protobuf/proto"

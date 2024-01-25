@@ -1,0 +1,8 @@
+syntax = "proto3";
+package node;
+option go_package = "example/blockchain";
+import "message.proto";
+
+service Node {
+  rpc Receive(stream message.BlockchainMessage) returns (stream message.BlockchainMessage) {}
+}
