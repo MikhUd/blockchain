@@ -1,8 +1,0 @@
-syntax = "proto3";
-package blockchain;
-option go_package = "example/blockchain";
-import "message.proto";
-
-service PeerManager {
-  rpc Receive(stream message.BlockchainMessage) returns (stream message.BlockchainMessage) {}
-}

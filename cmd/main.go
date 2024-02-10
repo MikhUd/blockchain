@@ -2,14 +2,18 @@ package main
 
 import (
 	"flag"
-	"github.com/MikhUd/blockchain/cmd/peer_manager"
-	"github.com/MikhUd/blockchain/internal/config"
-	"github.com/MikhUd/blockchain/internal/utils"
-	bcproto "github.com/MikhUd/blockchain/protos/blockchain"
+	"fmt"
+	"github.com/MikhUd/blockchain/cmd/cluster"
+	"github.com/MikhUd/blockchain/pkg/config"
+	"github.com/MikhUd/blockchain/pkg/grpcapi/message"
+	"github.com/MikhUd/blockchain/pkg/infrastructure/miner"
+	"github.com/MikhUd/blockchain/pkg/utils"
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -19,7 +23,7 @@ func main() {
 
 	flag.Parse()
 	/*
-		portBs := flag.Uint("port_bs", 5000, "TCP port for peer_manager server")
+		portBs := flag.Uint("port_bs", 5000, "TCP port for cluster server")
 		appBs := blockchain_server.New(uint16(*portBs), *cfg)
 		go appBs.Run()
 		portWs := flag.Uint("port_ws", 8080, "TCP wallet server port")
@@ -28,41 +32,55 @@ func main() {
 		go appWs.Run()
 
 		time.Sleep(time.Second * 5)
-		portBs1 := flag.Uint("port_bs1", 5001, "TCP port for peer_manager server")
+		portBs1 := flag.Uint("port_bs1", 5001, "TCP port for cluster server")
 		appBs1 := blockchain_server.New(uint16(*portBs1), *cfg)
 		go appBs1.Run()
 		time.Sleep(time.Second * 5)
-		portBs2 := flag.Uint("port_bs2", 5002, "TCP port for peer_manager server")
+		portBs2 := flag.Uint("port_bs2", 5002, "TCP port for cluster server")
 		appBs2 := blockchain_server.New(uint16(*portBs2), *cfg)
 		go appBs2.Run()
 	*/
 
 	/*
-		bn := peer_manager.New(cfg).WithLogger(log)
+		bn := cluster.New(cfg).WithLogger(log)
 		err := bn.Start()
 		if err != nil {
 			fmt.Printf(err.Error())
 		}
 	*/
-	pm := peer_manager.New(cfg).WithLogger(slog.Default())
-	err := pm.Start()
+	c := cluster.New(*cfg)
+	err := c.Start()
 	if err != nil {
 		slog.Error(err.Error())
 	}
-	s, _ := utils.GenerateRandomSignature()
-	pk, _ := utils.GenerateRandomPublicKey()
-	w := peer_manager.NewWriter(pm.Addr())
-	tr := &bcproto.TransactionRequest{
-		SenderPublicKey:            pk.String(),
+	privateKey, publicKey, err := utils.GenerateKeyPair()
+	tr := &message.TransactionRequest{
+		SenderPublicKey:            utils.PublicKeyStr(publicKey),
+		SenderPrivateKey:           utils.PrivateKeyStr(privateKey),
 		SenderBlockchainAddress:    "sender",
 		RecipientBlockchainAddress: "recipient",
-		Signature:                  s.String(),
 		Value:                      10.0,
 	}
-	ctx := peer_manager.NewContext(nil, nil, nil, tr)
-	err = w.Send(ctx)
+	err = c.Engine.Send(tr)
 
-	for _, n := range pm.GetNodes() {
+	fmt.Println("\n==============================test==============================")
+
+	time.Sleep(time.Second)
+	wg := sync.WaitGroup{}
+	wg.Add(len(c.GetNodes()))
+	for _, n := range c.GetNodes() {
+		bc := n.Blockchain()
+		slog.Info(fmt.Sprintf("count_main:%v\n", len(bc.TransactionPool())))
+		m := miner.New(bc)
+		go func() {
+			defer wg.Done()
+			m.Mining()
+		}()
+	}
+	wg.Wait()
+
+	fmt.Println("\n==============================test==============================")
+	for _, n := range c.GetNodes() {
 		n.Blockchain().Print()
 	}
 

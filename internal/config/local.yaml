@@ -1,7 +1,0 @@
-env: "local"
-version: 0
-mining_reward: 1
-mining_sender: "peer_manager"
-mining_difficulty : 5
-mining_timer_sec: 20
-nodes_count: 5

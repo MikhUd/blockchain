@@ -3,12 +3,12 @@ package blockchain_server
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/MikhUd/blockchain/internal/config"
-	"github.com/MikhUd/blockchain/internal/domain/blockchain"
-	"github.com/MikhUd/blockchain/internal/domain/transaction"
-	"github.com/MikhUd/blockchain/internal/domain/wallet"
-	"github.com/MikhUd/blockchain/internal/infrastructure/miner"
-	"github.com/MikhUd/blockchain/internal/utils"
+	"github.com/MikhUd/blockchain/pkg/config"
+	"github.com/MikhUd/blockchain/pkg/domain/blockchain"
+	"github.com/MikhUd/blockchain/pkg/domain/transaction"
+	"github.com/MikhUd/blockchain/pkg/domain/wallet"
+	"github.com/MikhUd/blockchain/pkg/infrastructure/miner"
+	"github.com/MikhUd/blockchain/pkg/utils"
 	"io"
 	"log"
 	"net/http"
@@ -31,14 +31,14 @@ func (bcs *BlockchainServer) Port() uint16 {
 }
 
 func (bcs *BlockchainServer) GetBlockchain(cfg config.Config) *blockchain.Blockchain {
-	bc, ok := cache[bcs.port]["peer_manager"]
+	bc, ok := cache[bcs.port]["cluster"]
 	if cache[bcs.port] == nil {
 		cache[bcs.port] = make(map[string]*blockchain.Blockchain)
 	}
 	if !ok {
 		minersWallet := wallet.New(bcs.config.Version)
 		bc = blockchain.New(minersWallet.BlockchainAddr(), bcs.Port(), cfg)
-		cache[bcs.port]["peer_manager"] = bc
+		cache[bcs.port]["cluster"] = bc
 	}
 	return bc
 }

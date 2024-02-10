@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package message;
+
+option go_package = "github.com/MikhUd/blockchain/pkg/grpcapi/message";
+
+message PID {
+  string addr = 1;
+}
+
+message BlockchainMessage {
+  bytes data = 1;
+  string typeName = 2;
+}
+
+message TestMessage {
+  bytes data = 1;
+}
+
+message TransactionRequest {
+  string senderPublicKey = 1;
+  string senderPrivateKey = 2;
+  string senderBlockchainAddress = 3;
+  string recipientBlockchainAddress = 4;
+  float value = 5;
+}

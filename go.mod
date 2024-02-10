@@ -4,7 +4,7 @@ go 1.21.5
 
 require (
 	github.com/btcsuite/btcutil v1.0.2
-	github.com/planetscale/vtprotobuf v0.5.0
+	github.com/planetscale/vtprotobuf v0.6.0
 	github.com/spf13/viper v1.18.2
 	github.com/stretchr/testify v1.8.4
 	golang.org/x/crypto v0.17.0

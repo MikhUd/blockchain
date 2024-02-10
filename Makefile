@@ -1,2 +1,2 @@
 run:
-	go run ./cmd/. -config=./internal/config/local.yaml
+	go run ./cmd/. -config=./pkg/config/local.yaml

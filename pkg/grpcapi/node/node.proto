@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package node;
+
+option go_package = "github.com/MikhUd/blockchain/pkg/grpcapi/node";
+
+import "message/message.proto";
+
+service Node {
+  rpc Receive(stream message.BlockchainMessage) returns (stream message.BlockchainMessage) {}
+}
