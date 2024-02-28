@@ -6,21 +6,15 @@ import (
 
 type Context struct {
 	sender    *message.PID
-	receiver  Receiver
+	receiver  *message.PID
 	msg       any
 	parentCtx *Context
 }
 
-func NewContext(pid *message.PID, sender *message.PID, receiver Receiver, msg any) *Context {
+func New(msg any) *Context {
 	return &Context{
-		sender:   sender,
-		receiver: receiver,
-		msg:      msg,
+		msg: msg,
 	}
-}
-
-func (c *Context) Invoke() error {
-	return c.receiver.Receive(c)
 }
 
 func (c *Context) WithParent(parentCtx *Context) *Context {
@@ -32,7 +26,7 @@ func (c *Context) Sender() *message.PID {
 	return c.sender
 }
 
-func (c *Context) Receiver() Receiver {
+func (c *Context) Receiver() *message.PID {
 	return c.receiver
 }
 
@@ -45,7 +39,7 @@ func (c *Context) WithSender(s *message.PID) *Context {
 	return c
 }
 
-func (c *Context) WithReceiver(r Receiver) *Context {
+func (c *Context) WithReceiver(r *message.PID) *Context {
 	c.receiver = r
 	return c
 }

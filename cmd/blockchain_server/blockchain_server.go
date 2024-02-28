@@ -7,7 +7,7 @@ import (
 	"github.com/MikhUd/blockchain/pkg/domain/blockchain"
 	"github.com/MikhUd/blockchain/pkg/domain/transaction"
 	"github.com/MikhUd/blockchain/pkg/domain/wallet"
-	"github.com/MikhUd/blockchain/pkg/infrastructure/miner"
+	"github.com/MikhUd/blockchain/pkg/miner"
 	"github.com/MikhUd/blockchain/pkg/utils"
 	"io"
 	"log"

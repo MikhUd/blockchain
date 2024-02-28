@@ -1,13 +1,12 @@
 package config
 
 import (
-	"flag"
 	"github.com/spf13/viper"
 	"os"
 )
 
 type Config struct {
-	Env              string  `mapstructure:"env" yaml:"env" env-default:"local"`
+	Env              string  `mapstructure:"env" yaml:"env" env-required:"true"`
 	Version          uint8   `mapstructure:"version" yaml:"version" env-required:"true"`
 	MiningReward     float32 `mapstructure:"mining_reward" yaml:"mining_reward" env-required:"true"`
 	MiningSender     string  `mapstructure:"mining_sender" yaml:"mining_sender" env-required:"true"`
@@ -28,8 +27,7 @@ const (
 	Stopped     = 2
 )
 
-func MustLoad() *Config {
-	path := fetchConfigPath()
+func MustLoad(path string) *Config {
 	if path == "" {
 		panic("config path is empty")
 	}
@@ -53,17 +51,4 @@ func MustLoadByPath(configPath string) *Config {
 	}
 
 	return &cfg
-}
-
-func fetchConfigPath() string {
-	var res string
-
-	flag.StringVar(&res, "config", "", "path to config file")
-	flag.Parse()
-
-	if res == "" {
-		res = os.Getenv("CONFIG_PATH")
-	}
-
-	return res
 }

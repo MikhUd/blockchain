@@ -1,4 +1,4 @@
-package cluster
+package serializer
 
 import (
 	"github.com/MikhUd/blockchain/pkg/grpcapi/message"

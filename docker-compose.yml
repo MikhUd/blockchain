@@ -1,0 +1,51 @@
+version: "3"
+services:
+  cluster:
+    build:
+      context: .
+      dockerfile: cluster-dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+    networks:
+      - blockchain_network
+  node0:
+    container_name: blockchain_node_0
+    build:
+      context: .
+      dockerfile: node-dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - HOST=node0
+      - PORT=3000
+    networks:
+      - blockchain_network
+  node1:
+    container_name: blockchain_node_1
+    build:
+      context: .
+      dockerfile: node-dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - HOST=node1
+      - PORT=3001
+    networks:
+      - blockchain_network
+  node2:
+    container_name: blockchain_node_2
+    build:
+      context: .
+      dockerfile: node-dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      - HOST=node2
+      - PORT=3002
+    networks:
+      - blockchain_network
+networks:
+  blockchain_network:
+    driver: bridge

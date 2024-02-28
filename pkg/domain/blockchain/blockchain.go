@@ -10,13 +10,10 @@ import (
 	"github.com/MikhUd/blockchain/pkg/domain/block"
 	"github.com/MikhUd/blockchain/pkg/domain/signature"
 	"github.com/MikhUd/blockchain/pkg/domain/transaction"
-	"github.com/MikhUd/blockchain/pkg/utils"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 type Blockchain struct {
@@ -24,7 +21,6 @@ type Blockchain struct {
 	chain           []*block.Block
 	addr            string
 	config          config.Config
-	port            uint16
 	mu              sync.RWMutex
 	neighbors       []string
 	muxNeighbors    sync.RWMutex
@@ -97,38 +93,37 @@ func (bc *Blockchain) LastBlock() *block.Block {
 	return bc.chain[len(bc.chain)-1]
 }
 
-func New(addr string, port uint16, cfg config.Config) *Blockchain {
+func New(cfg config.Config) *Blockchain {
 	b := &block.Block{}
 	blockChain := &Blockchain{
-		addr:   addr,
 		config: cfg,
-		port:   port,
 	}
 	blockChain.CreateBlock(0, b.Hash())
 	return blockChain
 }
 
-func (bc *Blockchain) Run() {
-	bc.StartSyncNeighbors()
-	bc.ResolveConflicts()
-}
+/*
+	func (bc *Blockchain) Run() {
+		bc.StartSyncNeighbors()
+		bc.ResolveConflicts()
+	}
 
-func (bc *Blockchain) SetNeighbors() {
-	bc.neighbors = utils.FindNeighbors(utils.GetHost(), bc.port, 0, 1, 5000, 5003)
-	log.Printf("Neighbors: %v", bc.neighbors)
-}
+	/*func (bc *Blockchain) SetNeighbors() {
+		bc.neighbors = utils.FindNeighbors(utils.GetHost(), bc.port, 0, 1, 5000, 5003)
+		log.Printf("Neighbors: %v", bc.neighbors)
+	}
 
-func (bc *Blockchain) SyncNeighbors() {
-	bc.muxNeighbors.Lock()
-	defer bc.muxNeighbors.Unlock()
-	bc.SetNeighbors()
-}
+	(bc *Blockchain) SyncNeighbors() {
+		bc.muxNeighbors.Lock()
+		defer bc.muxNeighbors.Unlock()
+		bc.SetNeighbors()
+	}
 
-func (bc *Blockchain) StartSyncNeighbors() {
-	bc.SyncNeighbors()
-	_ = time.AfterFunc(time.Second*20, bc.StartSyncNeighbors)
-}
-
+	func (bc *Blockchain) StartSyncNeighbors() {
+		bc.SyncNeighbors()
+		_ = time.AfterFunc(time.Second*20, bc.StartSyncNeighbors)
+	}
+*/
 func (bc *Blockchain) TransactionPool() []*transaction.Transaction {
 	return bc.transactionPool
 }

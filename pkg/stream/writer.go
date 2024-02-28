@@ -1,36 +1,41 @@
-package cluster
+package stream
 
 import (
 	"context"
 	"crypto/tls"
 	"fmt"
 	"github.com/MikhUd/blockchain/pkg/config"
-	"github.com/MikhUd/blockchain/pkg/grpcapi/cluster"
+	clusterContext "github.com/MikhUd/blockchain/pkg/context"
 	"github.com/MikhUd/blockchain/pkg/grpcapi/message"
-	context2 "github.com/MikhUd/blockchain/pkg/infrastructure/context"
+	"github.com/MikhUd/blockchain/pkg/grpcapi/remote"
+	"github.com/MikhUd/blockchain/pkg/serializer"
 	"log/slog"
 	"net"
 	"storj.io/drpc/drpcconn"
 	"sync/atomic"
 )
 
-type writer struct {
+type Writer struct {
 	writeAddr  string
 	nconn      net.Conn
 	dconn      *drpcconn.Conn
-	stream     cluster.DRPCPeerManager_ReceiveStream
-	serializer Serializer
+	stream     remote.DRPCRemote_ReceiveStream
+	serializer serializer.Serializer
 	state      atomic.Uint32
 	tlsConfig  *tls.Config
 }
 
 func NewWriter(writeAddr string) Sender {
-	return &writer{writeAddr: writeAddr}
+	return &Writer{writeAddr: writeAddr}
 }
 
-func (w *writer) Send(ctx *context2.Context) error {
+func (w *Writer) Addr() string {
+	return w.writeAddr
+}
+
+func (w *Writer) Send(ctx *clusterContext.Context) error {
 	const op = "writer.Send"
-	slog.Info(op)
+	var ser serializer.ProtoSerializer
 	if w.state.Load() != config.Running {
 		err := w.start(w.writeAddr)
 		if err != nil {
@@ -38,7 +43,6 @@ func (w *writer) Send(ctx *context2.Context) error {
 			return err
 		}
 	}
-	var ser ProtoSerializer
 	data, err := ser.Serialize(ctx.Msg())
 	if err != nil {
 		slog.With(slog.String("op", op)).Error(fmt.Sprintf("serialize error: %s", err.Error()))
@@ -50,12 +54,12 @@ func (w *writer) Send(ctx *context2.Context) error {
 		slog.With(slog.String("op", op)).Error(fmt.Sprintf("writer send error: %s", err.Error()))
 		return err
 	}
+	slog.With(slog.String("op", op)).Info(fmt.Sprintf("writer send success: %s", w.writeAddr))
 	return nil
 }
 
-func (w *writer) start(addr string) error {
+func (w *Writer) start(addr string) error {
 	const op = "writer.Start"
-	slog.Info(op)
 	//TODO: implement tls
 	nconn, err := net.Dial("tcp", addr)
 	if err != nil {
@@ -65,7 +69,7 @@ func (w *writer) start(addr string) error {
 	w.nconn = nconn
 
 	dconn := drpcconn.New(nconn)
-	client := cluster.NewDRPCPeerManagerClient(dconn)
+	client := remote.NewDRPCRemoteClient(dconn)
 	stream, err := client.Receive(context.Background())
 	if err != nil {
 		slog.With(slog.String("op", op)).Error(fmt.Sprintf("dconn creating stream error: %s", err.Error()))

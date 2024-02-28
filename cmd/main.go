@@ -3,10 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/MikhUd/blockchain/cmd/cluster"
+	"github.com/MikhUd/blockchain/pkg/cluster"
 	"github.com/MikhUd/blockchain/pkg/config"
+	"github.com/MikhUd/blockchain/pkg/context"
 	"github.com/MikhUd/blockchain/pkg/grpcapi/message"
-	"github.com/MikhUd/blockchain/pkg/infrastructure/miner"
+	"github.com/MikhUd/blockchain/pkg/miner"
 	"github.com/MikhUd/blockchain/pkg/utils"
 	"log/slog"
 	"os"
@@ -16,8 +17,13 @@ import (
 	"time"
 )
 
+var (
+	configPath = flag.String("config_path", "", "path to local config")
+)
+
 func main() {
-	cfg := config.MustLoad()
+	flag.Parse()
+	cfg := config.MustLoad(*configPath)
 	log := setupLogger(cfg.Env)
 	log.Info("Starting application", slog.String("env", cfg.Env))
 
@@ -48,7 +54,7 @@ func main() {
 			fmt.Printf(err.Error())
 		}
 	*/
-	c := cluster.New(*cfg)
+	c := cluster.New(*cfg, ":8080")
 	err := c.Start()
 	if err != nil {
 		slog.Error(err.Error())
@@ -61,7 +67,7 @@ func main() {
 		RecipientBlockchainAddress: "recipient",
 		Value:                      10.0,
 	}
-	err = c.Engine.Send(tr)
+	err = c.Engine.Send(context.New(tr))
 
 	fmt.Println("\n==============================test==============================")
 

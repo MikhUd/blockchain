@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package peer_manager;
+package remote;
 
-option go_package = "github.com/MikhUd/blockchain/pkg/grpcapi/cluster";
+option go_package = "github.com/MikhUd/blockchain/pkg/grpcapi/remote";
 
 import "message/message.proto";
 
-service PeerManager {
+service Remote {
   rpc Receive(stream message.BlockchainMessage) returns (stream message.BlockchainMessage) {}
 }

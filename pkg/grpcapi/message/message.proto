@@ -5,7 +5,8 @@ package message;
 option go_package = "github.com/MikhUd/blockchain/pkg/grpcapi/message";
 
 message PID {
-  string addr = 1;
+  uint32 id = 1;
+  string addr = 2;
 }
 
 message BlockchainMessage {
@@ -23,4 +24,25 @@ message TransactionRequest {
   string senderBlockchainAddress = 3;
   string recipientBlockchainAddress = 4;
   float value = 5;
+}
+
+message HeartbeatRequest {
+  uint32 memberId = 1;
+  string address = 2;
+}
+
+message HeartbeatResponse {
+  bool acknowledged = 1;
+  string address = 2;
+}
+
+message JoinRequest {
+  uint32 memberId = 1;
+  string address = 2;
+  bool isLeader = 3;
+}
+
+message JoinResponse {
+  bool acknowledged = 1;
+  string address = 2;
 }

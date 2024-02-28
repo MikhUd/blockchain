@@ -1,4 +1,4 @@
-package cluster
+package serializer
 
 import (
 	"google.golang.org/protobuf/proto"
