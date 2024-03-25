@@ -1,9 +1,9 @@
 package stream
 
 import (
+	"github.com/MikhUd/blockchain/pkg/api/message"
+	"github.com/MikhUd/blockchain/pkg/api/remote"
 	"github.com/MikhUd/blockchain/pkg/context"
-	"github.com/MikhUd/blockchain/pkg/grpcapi/message"
-	"github.com/MikhUd/blockchain/pkg/grpcapi/remote"
 	"github.com/MikhUd/blockchain/pkg/serializer"
 	"log"
 	"log/slog"
@@ -28,27 +28,16 @@ func (r *Reader) Receive(stream remote.DRPCRemote_ReceiveStream) error {
 		if err != nil {
 			return err
 		}
-		data, err := r.Deserialize(msg.Data, msg.TypeName)
+		data, err := r.Deserialize(msg.GetData(), msg.GetTypeName())
 		if err != nil {
 			log.Fatal(err)
 			return err
 		}
-
-		switch data.(type) {
-		case *message.JoinRequest:
-			err = r.Receiver.Receive(context.New(data).WithSender(&message.PID{Addr: data.(*message.JoinRequest).Address}))
-		case *message.JoinResponse:
-			err = r.Receiver.Receive(context.New(data).WithSender(&message.PID{Addr: data.(*message.JoinResponse).Address}))
-		case *message.HeartbeatRequest:
-			err = r.Receiver.Receive(context.New(data).WithSender(&message.PID{Addr: data.(*message.HeartbeatRequest).Address}))
-		case *message.HeartbeatResponse:
-			err = r.Receiver.Receive(context.New(data).WithSender(&message.PID{Addr: data.(*message.HeartbeatResponse).Address}))
-		}
+		err = r.Receiver.Receive(context.New(data).WithSender(&message.PID{Addr: data.(Addressable).GetRemote().GetAddr()}))
 		if err != nil {
 			slog.With(slog.String("op", op)).Error(err.Error())
 			return err
 		}
 	}
-
 	return nil
 }

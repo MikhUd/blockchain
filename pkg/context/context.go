@@ -1,7 +1,8 @@
 package context
 
 import (
-	"github.com/MikhUd/blockchain/pkg/grpcapi/message"
+	"errors"
+	"github.com/MikhUd/blockchain/pkg/api/message"
 )
 
 type Context struct {
@@ -10,6 +11,8 @@ type Context struct {
 	msg       any
 	parentCtx *Context
 }
+
+var Refused = errors.New("connection refused")
 
 func New(msg any) *Context {
 	return &Context{

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package remote;
 
-option go_package = "github.com/MikhUd/blockchain/pkg/grpcapi/remote";
+option go_package = "github.com/MikhUd/blockchain/pkg/api/remote";
 
 import "message/message.proto";
 

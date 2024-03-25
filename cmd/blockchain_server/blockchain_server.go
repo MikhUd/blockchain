@@ -6,13 +6,11 @@ import (
 	"github.com/MikhUd/blockchain/pkg/config"
 	"github.com/MikhUd/blockchain/pkg/domain/blockchain"
 	"github.com/MikhUd/blockchain/pkg/domain/transaction"
-	"github.com/MikhUd/blockchain/pkg/domain/wallet"
 	"github.com/MikhUd/blockchain/pkg/miner"
 	"github.com/MikhUd/blockchain/pkg/utils"
 	"io"
 	"log"
 	"net/http"
-	"strconv"
 )
 
 var cache = make(map[uint16]map[string]*blockchain.Blockchain)
@@ -36,8 +34,7 @@ func (bcs *BlockchainServer) GetBlockchain(cfg config.Config) *blockchain.Blockc
 		cache[bcs.port] = make(map[string]*blockchain.Blockchain)
 	}
 	if !ok {
-		minersWallet := wallet.New(bcs.config.Version)
-		bc = blockchain.New(minersWallet.BlockchainAddr(), bcs.Port(), cfg)
+		bc = blockchain.New(cfg)
 		cache[bcs.port]["cluster"] = bc
 	}
 	return bc
@@ -162,16 +159,4 @@ func (bcs *BlockchainServer) Consensus(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
-}
-
-func (bcs *BlockchainServer) Run() {
-	bcs.GetBlockchain(bcs.config).Run()
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", bcs.GetChain)
-	mux.HandleFunc("/transactions", bcs.Transactions)
-	mux.HandleFunc("/mine", bcs.Mine)
-	mux.HandleFunc("/mine/start", bcs.StartMine)
-	mux.HandleFunc("/amount", bcs.Amount)
-	mux.HandleFunc("/consensus", bcs.Consensus)
-	log.Fatal(http.ListenAndServe(fmt.Sprintf("%s:", utils.GetHost())+strconv.Itoa(int(bcs.Port())), mux))
 }

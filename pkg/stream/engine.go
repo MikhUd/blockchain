@@ -2,8 +2,8 @@ package stream
 
 import (
 	"fmt"
+	"github.com/MikhUd/blockchain/pkg/api/message"
 	"github.com/MikhUd/blockchain/pkg/context"
-	"github.com/MikhUd/blockchain/pkg/grpcapi/message"
 	"log/slog"
 	"sync"
 )

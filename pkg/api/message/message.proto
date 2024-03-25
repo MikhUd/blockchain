@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package message;
+
+option go_package = "github.com/MikhUd/blockchain/pkg/api/message";
+
+message PID {
+  string id = 1;
+  string addr = 2;
+}
+
+message BlockchainMessage {
+  bytes data = 1;
+  string typeName = 2;
+}
+
+message JoinMessage {
+  PID remote = 1;
+  bytes data = 2;
+  string typeName = 3;
+}
+
+message TestMessage {
+  bytes data = 1;
+}
+
+message TransactionRequest {
+  string senderPublicKey = 1;
+  string senderPrivateKey = 2;
+  string senderBlockchainAddress = 3;
+  string recipientBlockchainAddress = 4;
+  float value = 5;
+}
+
+message HeartbeatMessage {
+  PID remote = 1;
+  bool acknowledged = 2;
+}
+
+message ClusterJoinMessage {
+  bool acknowledged = 1;
+  repeated PID neighbors = 2;
+  PID leaderNode = 3;
+}
+
+message NodeJoinMessage {
+  bool acknowledged = 1;
+}
+
+message ElectionMessage {
+  PID remote = 1;
+  bool acknowledged = 2;
+}
+
+message SetLeaderMessage {
+  PID remote = 1;
+}

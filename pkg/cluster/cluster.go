@@ -3,11 +3,11 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"github.com/MikhUd/blockchain/pkg/api/message"
+	"github.com/MikhUd/blockchain/pkg/api/remote"
 	"github.com/MikhUd/blockchain/pkg/config"
 	clusterContext "github.com/MikhUd/blockchain/pkg/context"
-	"github.com/MikhUd/blockchain/pkg/grpcapi/message"
-	"github.com/MikhUd/blockchain/pkg/grpcapi/remote"
-	"github.com/MikhUd/blockchain/pkg/node"
+	"github.com/MikhUd/blockchain/pkg/serializer"
 	"github.com/MikhUd/blockchain/pkg/stream"
 	"log"
 	"log/slog"
@@ -22,36 +22,37 @@ import (
 	"time"
 )
 
-const (
-	memberJoinTimeout = time.Minute * 10
-	heartBeatTimeout  = time.Second * 10
-)
-
 type Cluster struct {
 	addr       string
 	cfg        config.Config
+	ctx        context.Context
+	cancel     context.CancelFunc
 	stopCh     chan struct{}
 	reader     *stream.Reader
 	wg         *sync.WaitGroup
-	nodes      []nodeInfo
-	leaderNode *node.LeaderNode
+	leaderNode *nodeInfo
+	nodes      map[string]*nodeInfo
 	state      atomic.Uint32
 	Engine     *stream.Engine
 	nodesMutex sync.RWMutex
 }
 
 type nodeInfo struct {
-	id              uint32
 	heartbeatMisses uint8
-	address         string
+	addr            string
 }
 
+var ser serializer.ProtoSerializer
+
 func New(cfg config.Config, addr string) *Cluster {
+	ctx, cancel := context.WithCancel(context.Background())
 	c := &Cluster{
-		addr:  addr,
-		wg:    &sync.WaitGroup{},
-		cfg:   cfg,
-		nodes: make([]nodeInfo, 0),
+		addr:   addr,
+		cfg:    cfg,
+		ctx:    ctx,
+		cancel: cancel,
+		wg:     &sync.WaitGroup{},
+		nodes:  make(map[string]*nodeInfo),
 	}
 	c.reader = stream.NewReader(c)
 	c.state.Store(config.Initialized)
@@ -106,7 +107,7 @@ func (c *Cluster) Start() error {
 func (c *Cluster) Receive(ctx *clusterContext.Context) error {
 	var err error
 	const op = "cluster.Receive"
-	slog.With(slog.String("op", op)).Info(fmt.Sprintf("cluster received new peer: %s", ctx.Sender().Addr))
+	slog.With(slog.String("op", op)).Info(fmt.Sprintf("cluster received new peer: %s", ctx.Sender().GetAddr()))
 	if c.state.Load() != config.Running {
 		go func() {
 			if err = c.Start(); err != nil {
@@ -117,31 +118,49 @@ func (c *Cluster) Receive(ctx *clusterContext.Context) error {
 	}
 
 	switch msg := ctx.Msg().(type) {
-	case *message.JoinRequest:
+	case *message.JoinMessage:
 		go func() {
 			err = c.handleJoin(msg, ctx)
 		}()
-	case *message.HeartbeatRequest:
+	case *message.HeartbeatMessage:
 		err = c.handleHeartbeat(msg, ctx)
 	}
 
 	return err
 }
 
-func (c *Cluster) handleJoin(msg *message.JoinRequest, ctx *clusterContext.Context) error {
-	var err error
+func (c *Cluster) handleJoin(msg *message.JoinMessage, ctx *clusterContext.Context) error {
+	var (
+		err        error
+		remoteId   = msg.Remote.GetId()
+		remoteAddr = msg.Remote.GetAddr()
+		neighbors  = make([]*message.PID, 0)
+	)
 	const op = "cluster.handleJoin"
-	slog.With(slog.String("op", op)).Info(fmt.Sprintf("cluster received join: %s", msg.Address))
-	rawconn, err := net.Dial("tcp", msg.Address)
+	slog.With(slog.String("op", op)).Info(fmt.Sprintf("cluster received join: %s", remoteAddr))
+	rawconn, err := net.Dial("tcp", remoteAddr)
 	if err != nil {
 		slog.With(slog.String("op", op)).Error(fmt.Sprintf("member join error: %s", err.Error()))
+		return err
 	}
-	if err = rawconn.SetDeadline(time.Now().Add(memberJoinTimeout)); err != nil {
+	if err = rawconn.SetDeadline(time.Now().Add(time.Minute * time.Duration(c.cfg.MemberJoinTimeout))); err != nil {
 		slog.With(slog.String("op", op)).Error(fmt.Sprintf("failed to set deadline: %s", err.Error()))
+		return err
 	}
-	resp := &message.JoinResponse{Acknowledged: true, Address: c.Addr()}
-	c.Engine.AddWriter(stream.NewWriter(msg.Address))
-	ctx = clusterContext.New(resp).WithParent(ctx).WithReceiver(&message.PID{Addr: msg.Address})
+	//TODO: send join event for all members in cluster, wait confirmation, then accept new node
+	for id, n := range c.nodes {
+		neighbors = append(neighbors, &message.PID{Id: id, Addr: n.addr})
+	}
+	c.nodes[remoteId] = &nodeInfo{heartbeatMisses: 0, addr: remoteAddr}
+	joinResp := &message.ClusterJoinMessage{Acknowledged: true, Neighbors: neighbors}
+	data, err := ser.Serialize(joinResp)
+	if err != nil {
+		slog.With(slog.String("op", op)).Error("error send join response: %s", err.Error())
+		return err
+	}
+	resp := &message.JoinMessage{Remote: &message.PID{Addr: c.Addr()}, Data: data, TypeName: ser.TypeName(joinResp)}
+	c.Engine.AddWriter(stream.NewWriter(remoteAddr))
+	ctx = clusterContext.New(resp).WithParent(ctx).WithReceiver(&message.PID{Addr: remoteAddr})
 	err = c.Engine.Send(ctx)
 	if err != nil {
 		slog.With(slog.String("op", op)).Error("error send join response: %s", err.Error())
@@ -149,23 +168,62 @@ func (c *Cluster) handleJoin(msg *message.JoinRequest, ctx *clusterContext.Conte
 	return err
 }
 
-func (c *Cluster) handleHeartbeat(msg *message.HeartbeatRequest, ctx *clusterContext.Context) error {
-	var err error
+func (c *Cluster) handleHeartbeat(msg *message.HeartbeatMessage, ctx *clusterContext.Context) error {
+	var (
+		err          error
+		remoteId     = msg.Remote.GetId()
+		remoteAddr   = msg.Remote.GetAddr()
+		acknowledged = false
+	)
 	const op = "cluster.handleHeartBeat"
-	slog.With(slog.String("op", op)).Info(fmt.Sprintf("cluster received heart beat from: %s", msg.Address))
-	rawconn, err := net.Dial("tcp", msg.Address)
-	if err = rawconn.SetDeadline(time.Now().Add(heartBeatTimeout)); err != nil {
-		slog.With(slog.String("op", op)).Error(fmt.Sprintf("failed to set deadline: %s", err.Error()))
-	}
 	c.nodesMutex.Lock()
 	defer c.nodesMutex.Unlock()
-	c.nodes = append(c.nodes, nodeInfo{id: msg.MemberId, heartbeatMisses: 0, address: msg.Address})
-	resp := &message.HeartbeatResponse{Acknowledged: true, Address: c.Addr()}
-	c.Engine.AddWriter(stream.NewWriter(msg.Address))
-	ctx = clusterContext.New(resp).WithParent(ctx).WithReceiver(&message.PID{Addr: msg.Address})
+	slog.With(slog.String("op", op)).Info(fmt.Sprintf("cluster received heart beat from: %s", msg.GetRemote().GetAddr()))
+	rawconn, err := net.Dial("tcp", remoteAddr)
+	if err = rawconn.SetDeadline(time.Now().Add(time.Second * time.Duration(c.cfg.HeartBeatTimeout))); err != nil {
+		slog.With(slog.String("op", op)).Error(fmt.Sprintf("failed to set deadline: %s", err.Error()))
+	}
+	if n, ok := c.nodes[remoteId]; ok {
+		n.heartbeatMisses = 0
+		acknowledged = true
+	}
+	resp := &message.HeartbeatMessage{Remote: &message.PID{Addr: c.Addr()}, Acknowledged: acknowledged}
+	c.Engine.AddWriter(stream.NewWriter(remoteAddr))
+	ctx = clusterContext.New(resp).WithParent(ctx).WithReceiver(&message.PID{Addr: remoteAddr})
 	err = c.Engine.Send(ctx)
 	if err != nil {
 		slog.With(slog.String("op", op)).Error("error send heart beat response: %s", err.Error())
 	}
 	return err
+}
+
+func (c *Cluster) manageNodes() {
+	c.wg.Add(1)
+	defer c.wg.Done()
+	ticker := time.NewTicker(time.Second * time.Duration(c.cfg.NodeHeartBeatInterval))
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			c.removeInactiveNodes()
+		case <-c.ctx.Done():
+			return
+		}
+	}
+}
+
+func (c *Cluster) removeInactiveNodes() {
+	const op = "cluster.removeInactiveNodes"
+	c.nodesMutex.Lock()
+	defer c.nodesMutex.Unlock()
+	for id, node := range c.nodes {
+		if node.heartbeatMisses > uint8(c.cfg.MaxNodeHeartBeatMisses) {
+			if node.addr == c.leaderNode.addr {
+				slog.With(slog.String("op", op)).Info(fmt.Sprintf("leader node is dead, stop cluster until election, node: %s, addr: %s", id, node.addr))
+				c.state.Store(config.Stopped)
+			}
+			slog.With(slog.String("op", op)).Info(fmt.Sprintf("remove inactive node: %s, addr: %s", id, node.addr))
+		}
+	}
 }

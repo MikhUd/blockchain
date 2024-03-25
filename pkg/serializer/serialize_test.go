@@ -1,7 +1,7 @@
 package serializer
 
 import (
-	"github.com/MikhUd/blockchain/pkg/grpcapi/message"
+	"github.com/MikhUd/blockchain/pkg/api/message"
 	"github.com/MikhUd/blockchain/pkg/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -38,4 +38,13 @@ func TestTransactionRequest(t *testing.T) {
 	dTr, err := ProtoSerializer{}.Deserialize(dmsg.(*message.BlockchainMessage).Data, ProtoSerializer{}.TypeName(tr))
 	require.NoError(t, err)
 	assert.IsType(t, tr, dTr)
+}
+
+func TestNodeJoinMessage(t *testing.T) {
+	joinMsg := &message.NodeJoinMessage{Acknowledged: true}
+	serialized, err := ProtoSerializer{}.Serialize(joinMsg)
+	require.NoError(t, err)
+	dmsg, err := ProtoSerializer{}.Deserialize(serialized, ProtoSerializer{}.TypeName(joinMsg))
+	require.NoError(t, err)
+	assert.IsType(t, joinMsg, dmsg)
 }

@@ -2,19 +2,15 @@ package main
 
 import (
 	"flag"
-	"fmt"
+	"github.com/MikhUd/blockchain/pkg/api/message"
 	"github.com/MikhUd/blockchain/pkg/cluster"
 	"github.com/MikhUd/blockchain/pkg/config"
 	"github.com/MikhUd/blockchain/pkg/context"
-	"github.com/MikhUd/blockchain/pkg/grpcapi/message"
-	"github.com/MikhUd/blockchain/pkg/miner"
 	"github.com/MikhUd/blockchain/pkg/utils"
 	"log/slog"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
-	"time"
 )
 
 var (
@@ -68,27 +64,6 @@ func main() {
 		Value:                      10.0,
 	}
 	err = c.Engine.Send(context.New(tr))
-
-	fmt.Println("\n==============================test==============================")
-
-	time.Sleep(time.Second)
-	wg := sync.WaitGroup{}
-	wg.Add(len(c.GetNodes()))
-	for _, n := range c.GetNodes() {
-		bc := n.Blockchain()
-		slog.Info(fmt.Sprintf("count_main:%v\n", len(bc.TransactionPool())))
-		m := miner.New(bc)
-		go func() {
-			defer wg.Done()
-			m.Mining()
-		}()
-	}
-	wg.Wait()
-
-	fmt.Println("\n==============================test==============================")
-	for _, n := range c.GetNodes() {
-		n.Blockchain().Print()
-	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)

@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"github.com/MikhUd/blockchain/pkg/api/message"
+	"github.com/MikhUd/blockchain/pkg/api/remote"
 	"github.com/MikhUd/blockchain/pkg/config"
 	clusterContext "github.com/MikhUd/blockchain/pkg/context"
-	"github.com/MikhUd/blockchain/pkg/grpcapi/message"
-	"github.com/MikhUd/blockchain/pkg/grpcapi/remote"
 	"github.com/MikhUd/blockchain/pkg/serializer"
 	"log/slog"
 	"net"
@@ -54,7 +54,6 @@ func (w *Writer) Send(ctx *clusterContext.Context) error {
 		slog.With(slog.String("op", op)).Error(fmt.Sprintf("writer send error: %s", err.Error()))
 		return err
 	}
-	slog.With(slog.String("op", op)).Info(fmt.Sprintf("writer send success: %s", w.writeAddr))
 	return nil
 }
 
@@ -64,7 +63,7 @@ func (w *Writer) start(addr string) error {
 	nconn, err := net.Dial("tcp", addr)
 	if err != nil {
 		slog.With(slog.String("op", op)).Error(fmt.Sprintf("nconn init error: %s", err.Error()))
-		return err
+		return clusterContext.Refused
 	}
 	w.nconn = nconn
 
@@ -77,11 +76,8 @@ func (w *Writer) start(addr string) error {
 	w.dconn = dconn
 	w.stream = stream
 
-	slog.With(slog.String("op", op)).Debug("writer connected", "peer manager", w.writeAddr)
-
 	go func() {
 		<-w.dconn.Closed()
-		slog.Debug("writer connection closed", "peer manager addr", w.writeAddr)
 	}()
 
 	return nil

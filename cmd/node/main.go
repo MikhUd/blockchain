@@ -19,15 +19,17 @@ var (
 
 func main() {
 	flag.Parse()
+	cfg := config.MustLoad(*configPath)
 	hostStr := os.Getenv("HOST")
 	portStr := os.Getenv("PORT")
 	if hostStr != "" && portStr != "" {
 		*nodePort = net.JoinHostPort(hostStr, portStr)
 	}
-	*clusterPort = fmt.Sprintf("cluster%s", *clusterPort)
-	cfg := config.MustLoad(*configPath)
+	if cfg.Env == config.EnvDev {
+		*clusterPort = fmt.Sprintf("cluster%s", *clusterPort)
+	}
 	bc := blockchain.New(*cfg)
-	n := node.New(*nodePort, *clusterPort, bc)
+	n := node.New(*nodePort, *clusterPort, bc, *cfg)
 	if err := n.Start(); err != nil {
 		log.Fatal(err)
 	}
