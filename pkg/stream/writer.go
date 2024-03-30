@@ -13,11 +13,12 @@ import (
 	"net"
 	"storj.io/drpc/drpcconn"
 	"sync/atomic"
+	"time"
 )
 
 type Writer struct {
 	writeAddr  string
-	nconn      net.Conn
+	conn       net.Conn
 	dconn      *drpcconn.Conn
 	stream     remote.DRPCRemote_ReceiveStream
 	serializer serializer.Serializer
@@ -29,12 +30,17 @@ func NewWriter(writeAddr string) Sender {
 	return &Writer{writeAddr: writeAddr}
 }
 
+func (w *Writer) WithConn(conn net.Conn) Sender {
+	w.conn = conn
+	return w
+}
+
 func (w *Writer) Addr() string {
 	return w.writeAddr
 }
 
 func (w *Writer) Send(ctx *clusterContext.Context) error {
-	const op = "writer.Send"
+	var op = "writer.Send"
 	var ser serializer.ProtoSerializer
 	if w.state.Load() != config.Running {
 		err := w.start(w.writeAddr)
@@ -51,34 +57,63 @@ func (w *Writer) Send(ctx *clusterContext.Context) error {
 	msg := &message.BlockchainMessage{Data: data, TypeName: ser.TypeName(ctx.Msg())}
 	err = w.stream.Send(msg)
 	if err != nil {
-		slog.With(slog.String("op", op)).Error(fmt.Sprintf("writer send error: %s", err.Error()))
+		slog.With(slog.String("op", op)).Error(fmt.Sprintf("writer send error: %s, addr: %s", err.Error(), w.writeAddr))
 		return err
 	}
 	return nil
 }
 
 func (w *Writer) start(addr string) error {
-	const op = "writer.Start"
+	var (
+		err        error
+		conn       net.Conn
+		op         = "writer.Start"
+		delay      = time.Millisecond * 500
+		maxRetries = 3
+	)
 	//TODO: implement tls
-	nconn, err := net.Dial("tcp", addr)
-	if err != nil {
-		slog.With(slog.String("op", op)).Error(fmt.Sprintf("nconn init error: %s", err.Error()))
-		return clusterContext.Refused
+	if w.conn == nil {
+		for i := 0; i < maxRetries; i++ {
+			rDelay := delay * time.Duration(i*2)
+			conn, err = net.Dial("tcp", addr)
+			if err != nil {
+				time.Sleep(rDelay)
+				continue
+			}
+			break
+		}
+		if conn == nil {
+			w.Shutdown()
+			return err
+		}
+		w.conn = conn
 	}
-	w.nconn = nconn
-
-	dconn := drpcconn.New(nconn)
+	dconn := drpcconn.New(w.conn)
 	client := remote.NewDRPCRemoteClient(dconn)
 	stream, err := client.Receive(context.Background())
 	if err != nil {
 		slog.With(slog.String("op", op)).Error(fmt.Sprintf("dconn creating stream error: %s", err.Error()))
+		return err
 	}
 	w.dconn = dconn
 	w.stream = stream
-
+	w.state.Store(config.Running)
 	go func() {
 		<-w.dconn.Closed()
 	}()
-
 	return nil
+}
+
+func (w *Writer) Shutdown() {
+	fmt.Println("WRITER SHUTDOWN", w.writeAddr)
+	if w.stream != nil {
+		_ = w.stream.Close()
+	}
+	if w.conn != nil {
+		_ = w.conn.Close()
+	}
+	if w.dconn != nil {
+		_ = w.dconn.Close()
+	}
+	w.state.Store(config.Stopped)
 }

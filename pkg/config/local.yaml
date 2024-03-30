@@ -4,10 +4,12 @@ mining_reward: 1
 mining_sender: "cluster"
 mining_difficulty : 5
 mining_timer_sec: 20
-max_node_heartbeat_misses: 10
+max_node_heartbeat_misses: 5
 max_cluster_heartbeat_misses: 5
 member_join_timeout: 20
 heartbeat_timeout: 10
-node_heartbeat_interval: 2
+node_heartbeat_interval_ms: 2000
+cluster_heartbeat_interval_ms: 2000
 min_leader_election_ms: 200
 max_leader_election_ms: 400
+node_recover_timeout_ms: 3500

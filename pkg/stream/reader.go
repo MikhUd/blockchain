@@ -22,7 +22,7 @@ func NewReader(r context.Receiver) *Reader {
 }
 
 func (r *Reader) Receive(stream remote.DRPCRemote_ReceiveStream) error {
-	const op = "reader.Receive"
+	var op = "reader.Receive"
 	for {
 		msg, err := stream.Recv()
 		if err != nil {

@@ -19,18 +19,18 @@ func NewEngine(PID *message.PID) *Engine {
 }
 
 func (e *Engine) AddWriter(writer Sender) {
+	e.mu.RLock()
 	_, ok := e.writers[writer.Addr()]
 	if ok {
 		return
 	}
-	e.mu.RLock()
 	defer e.mu.RUnlock()
 	e.writers[writer.Addr()] = writer
 }
 
 func (e *Engine) Send(ctx *context.Context) error {
-	const op = "engine.Send"
-	addr := ctx.Receiver().Addr
+	var op = "engine.Send"
+	addr := ctx.Receiver().GetAddr()
 	if len(e.writers) == 0 {
 		slog.With(slog.String("op", op)).Error("empty writers")
 		return fmt.Errorf("no writers available")
@@ -43,6 +43,13 @@ func (e *Engine) Send(ctx *context.Context) error {
 	if err != nil {
 		slog.With(slog.String("op", op)).Error("engine send error")
 		return err
+	}
+	return nil
+}
+
+func (e *Engine) GetWriter(addr string) Sender {
+	if writer, ok := e.writers[addr]; ok == true {
+		return writer
 	}
 	return nil
 }
