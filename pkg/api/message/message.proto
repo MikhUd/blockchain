@@ -39,7 +39,7 @@ message HeartbeatMessage {
 
 message ClusterJoinMessage {
   bool acknowledged = 1;
-  repeated PID neighbors = 2;
+  repeated PID members = 2;
   PID leaderNode = 3;
 }
 

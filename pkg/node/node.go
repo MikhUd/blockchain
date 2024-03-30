@@ -46,8 +46,9 @@ type Node struct {
 	reserveClusters []*MemberInfo
 	engine          *stream.Engine
 	state           atomic.Uint32
-	neighbors       map[string]*MemberInfo
-	votes           int
+	members         map[string]*MemberInfo
+	activeMembers   map[string]struct{}
+	votes           map[string]struct{}
 	electionTime    time.Duration
 	leaderCh        chan struct{}
 	connPool        map[string]net.Conn
@@ -71,19 +72,21 @@ var (
 func New(addr string, clusterAddr string, bc *blockchain.Blockchain, cfg config.Config) *Node {
 	ctx, cancel := context.WithCancel(context.Background())
 	n := &Node{
-		id:           uuid.New().String(),
-		addr:         addr,
-		stopCh:       make(chan struct{}),
-		cfg:          cfg,
-		ctx:          ctx,
-		cancel:       cancel,
-		bc:           bc,
-		cluster:      &ClusterInfo{addr: clusterAddr, info: &MemberInfo{heartbeatMisses: 0}},
-		engine:       stream.NewEngine(nil),
-		electionTime: time.Duration(utils.RandElection(cfg)) * time.Millisecond,
-		leaderCh:     make(chan struct{}),
-		neighbors:    make(map[string]*MemberInfo),
-		connPool:     make(map[string]net.Conn),
+		id:            uuid.New().String(),
+		addr:          addr,
+		stopCh:        make(chan struct{}),
+		cfg:           cfg,
+		ctx:           ctx,
+		cancel:        cancel,
+		bc:            bc,
+		cluster:       &ClusterInfo{addr: clusterAddr, info: &MemberInfo{heartbeatMisses: 0}},
+		engine:        stream.NewEngine(nil),
+		electionTime:  time.Duration(utils.RandElection(cfg)) * time.Millisecond,
+		leaderCh:      make(chan struct{}),
+		members:       make(map[string]*MemberInfo),
+		activeMembers: make(map[string]struct{}),
+		votes:         make(map[string]struct{}),
+		connPool:      make(map[string]net.Conn),
 	}
 	n.reader = stream.NewReader(n)
 	n.state.Store(config.Initialized)
@@ -321,7 +324,7 @@ func (n *Node) handleClusterJoin(msg *message.ClusterJoinMessage, clusterAddr st
 		err error
 	)
 	var (
-		neighbors  = msg.GetNeighbors()
+		members    = msg.GetMembers()
 		leaderNode = msg.GetLeaderNode()
 	)
 	if msg.GetAcknowledged() {
@@ -339,9 +342,9 @@ func (n *Node) handleClusterJoin(msg *message.ClusterJoinMessage, clusterAddr st
 		slog.With(slog.String("op", op)).Info(fmt.Sprintf("found leader node in cluster: %s, node addr: %s", clusterAddr, leaderNode.GetAddr()))
 		n.LeaderAddr = leaderNode.GetAddr()
 	}
-	if len(neighbors) > 0 {
-		n.wg.Add(len(neighbors))
-		for _, neighbor := range neighbors {
+	if len(members) > 0 {
+		n.wg.Add(len(members))
+		for _, neighbor := range members {
 			go func(addr string) {
 				defer n.wg.Done()
 				if err = n.dial(addr, &message.NodeJoinMessage{}, dialTimeout); err != nil {
@@ -352,35 +355,55 @@ func (n *Node) handleClusterJoin(msg *message.ClusterJoinMessage, clusterAddr st
 		}
 		n.wg.Wait()
 		if n.LeaderAddr == "" {
-			go func() {
-				if err = n.election(); err != nil {
-					slog.With(slog.String("op", op)).Error(fmt.Sprintf("election error: %s", err.Error()))
-					return
-				}
-			}()
+			n.startElection()
 		}
 	}
 	return err
 }
 
-func (n *Node) heartbeat(addr string, interval int, errCh chan struct{}) {
+func (n *Node) heartbeat(addr string, interval int, errCh chan<- struct{}) {
 	var err error
 	if err = n.periodHeartbeat(addr, interval); err != nil {
 		errCh <- struct{}{}
 	}
+	close(errCh)
+}
+
+func (n *Node) startElection() {
+	var (
+		op  = "node.startElection"
+		err error
+	)
+	go func() {
+		if err = n.election(); err != nil {
+			slog.With(slog.String("op", op)).Error(fmt.Sprintf("election error: %s", err.Error()))
+			return
+		}
+	}()
 }
 
 func (n *Node) startHeartbeat(addr string, interval int, maxAttempts uint8, attemptsCounter *uint8, recover bool) error {
 	var (
 		op    = "node.startHeartbeat"
-		errCh chan struct{}
+		errCh = make(chan struct{})
 		err   error
 	)
-	n.heartbeat(addr, interval, errCh)
+	go n.heartbeat(addr, interval, errCh)
 	<-errCh
 	if addr == n.cluster.addr {
 		n.LeaderAddr = ""
-		n.neighbors = make(map[string]*MemberInfo)
+		n.members = make(map[string]*MemberInfo)
+	}
+	member, ok := n.members[addr]
+	if ok == true {
+		member.state.Store(config.Inactive)
+		if _, ok := n.activeMembers[addr]; ok == true {
+			delete(n.activeMembers, addr)
+		}
+	}
+	if addr == n.LeaderAddr {
+		n.LeaderAddr = ""
+		n.startElection()
 	}
 	if recover == true {
 		err = n.tryRecover(addr, maxAttempts, attemptsCounter)
@@ -398,7 +421,7 @@ func (n *Node) handleNodeJoin(msg *message.NodeJoinMessage, nodeAddr string) err
 		err      error
 		neighbor *MemberInfo
 	)
-	for addr, node := range n.neighbors {
+	for addr, node := range n.members {
 		if nodeAddr == addr && node.state.Load() == config.Active {
 			return err
 		}
@@ -407,7 +430,8 @@ func (n *Node) handleNodeJoin(msg *message.NodeJoinMessage, nodeAddr string) err
 		n.mu.Lock()
 		neighbor = &MemberInfo{heartbeatMisses: 0}
 		neighbor.state.Store(config.Active)
-		n.neighbors[nodeAddr] = neighbor
+		n.members[nodeAddr] = neighbor
+		n.activeMembers[nodeAddr] = struct{}{}
 		n.mu.Unlock()
 		slog.With(slog.String("op", op)).Info(fmt.Sprintf("successfully dialed with node, append new neighbor node: %s", nodeAddr))
 		go func() {
@@ -481,8 +505,8 @@ func (n *Node) election() error {
 		err error
 	)
 	n.electionTime = time.Duration(utils.RandElection(n.cfg)) * time.Millisecond
-	slog.With(slog.String("op", op)).Info(fmt.Sprintf("no leader node in cluster, starting election, election time: %s, neighbors count: %d", n.electionTime.String(), len(n.neighbors)))
-	n.votes = 0
+	slog.With(slog.String("op", op)).Info(fmt.Sprintf("no leader node in cluster, starting election, election time: %s, members count: %d", n.electionTime.String(), len(n.members)))
+	n.votes = make(map[string]struct{})
 	ticker := time.NewTicker(n.electionTime)
 	defer ticker.Stop()
 	for {
@@ -507,10 +531,10 @@ func (n *Node) broadcastVote() error {
 		op  = "node.voteBroadcast"
 		err error
 	)
-	n.wg.Add(len(n.neighbors))
-	for addr, neighbor := range n.neighbors {
-		go func(addr string, neighbor *MemberInfo) {
-			if neighbor.state.Load() != config.Active {
+	n.wg.Add(len(n.members))
+	for addr, node := range n.members {
+		go func(addr string, node *MemberInfo) {
+			if node.state.Load() != config.Active {
 				n.wg.Done()
 				return
 			}
@@ -519,13 +543,13 @@ func (n *Node) broadcastVote() error {
 				slog.With(slog.String("op", op)).Error(fmt.Sprintf("send vote error: %s", err.Error()))
 			}
 			if errors.Is(err, clusterContext.Refused) {
-				ok := neighbor.state.CompareAndSwap(config.Active, config.Inactive)
+				ok := node.state.CompareAndSwap(config.Active, config.Inactive)
 				if ok {
 					slog.With(slog.String("op", op)).Error(fmt.Sprintf("neighbor %s refuse connection, set inactive status", addr))
 				}
 			}
 			n.wg.Done()
-		}(addr, neighbor)
+		}(addr, node)
 	}
 	n.wg.Wait()
 	return err
@@ -544,21 +568,26 @@ func (n *Node) requestVote(addr string) error {
 
 func (n *Node) handleVote(msg *message.ElectionMessage) error {
 	var (
-		op  = "node.handleVote"
-		err error
+		op   = "node.handleVote"
+		addr = msg.GetRemote().GetAddr()
+		err  error
 	)
 	ack := true
 	//n.mu.Lock()
 	//defer n.mu.Unlock()
+	fmt.Println("VOTE FROM", msg.GetRemote().GetAddr())
+	fmt.Println("VOTES COUNT", len(n.votes))
+	fmt.Println("ACK", msg.GetAcknowledged())
 	if msg.GetAcknowledged() == true {
-		n.votes++
-		if n.votes > len(n.neighbors)/2 {
+		n.votes[addr] = struct{}{}
+		if len(n.votes) > len(n.activeMembers)/2 {
 			slog.With(slog.String("op", op)).Info(fmt.Sprintf("this node becomes new leader: %s", n.addr))
 			n.broadcastSetLeader()
 		}
 		return nil
 	}
 	if n.LeaderAddr != "" {
+		fmt.Println("LEADER ADDR NOT NIL")
 		ack = false
 	}
 	msg = &message.ElectionMessage{Acknowledged: ack, Remote: &message.PID{Id: n.id, Addr: n.addr}}
@@ -570,19 +599,19 @@ func (n *Node) handleVote(msg *message.ElectionMessage) error {
 
 func (n *Node) broadcastSetLeader() {
 	var op = "node.broadcastSetLeader"
-	n.wg.Add(len(n.neighbors) + 1)
-	for addr := range n.neighbors {
+	n.wg.Add(len(n.members) + 1)
+	for addr := range n.activeMembers {
 		go func(addr string) {
 			defer n.wg.Done()
 			if err := n.sendSetLeader(addr); err != nil {
-				slog.With(slog.String("op", op)).Error("send set leader error: %s", err.Error())
+				slog.With(slog.String("op", op)).Error(fmt.Sprintf("send set leader error: %s", err.Error()))
 			}
 		}(addr)
 	}
 	go func() {
 		defer n.wg.Done()
 		if err := n.sendSetLeader(n.cluster.addr); err != nil {
-			slog.With(slog.String("op", op)).Error("send set leader error: %s", err.Error())
+			slog.With(slog.String("op", op)).Error(fmt.Sprintf("send set leader error: %s", err.Error()))
 		}
 	}()
 	n.wg.Wait()
@@ -608,7 +637,7 @@ func (n *Node) handleSetLeader(msg *message.SetLeaderMessage) error {
 }
 
 func (n *Node) handleLostConnWithoutRecovering(connAddr string) error {
-	for addr, node := range n.neighbors {
+	for addr, node := range n.members {
 		if addr == connAddr {
 			node.state.Store(config.Inactive)
 			return utils.CloseConn(n, connAddr)

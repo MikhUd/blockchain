@@ -192,7 +192,7 @@ func (c *Cluster) handleJoin(msg *message.JoinMessage, ctx *clusterContext.Conte
 		err        error
 		remoteId   = msg.Remote.GetId()
 		remoteAddr = msg.Remote.GetAddr()
-		neighbors  = make([]*message.PID, 0)
+		members    = make([]*message.PID, 0)
 		leaderNode *message.PID
 	)
 	slog.With(slog.String("op", op)).Info(fmt.Sprintf("cluster received join: %s", remoteAddr))
@@ -207,7 +207,7 @@ func (c *Cluster) handleJoin(msg *message.JoinMessage, ctx *clusterContext.Conte
 	}
 	for id, node := range c.nodes {
 		if node.state.Load() == config.Active {
-			neighbors = append(neighbors, &message.PID{Id: id, Addr: node.addr})
+			members = append(members, &message.PID{Id: id, Addr: node.addr})
 		}
 	}
 	node := &nodeInfo{addr: remoteAddr, heartbeatMisses: 0}
@@ -216,7 +216,7 @@ func (c *Cluster) handleJoin(msg *message.JoinMessage, ctx *clusterContext.Conte
 	if c.leaderNode != nil {
 		leaderNode = &message.PID{Addr: c.leaderNode.addr}
 	}
-	resp := &message.ClusterJoinMessage{Acknowledged: true, Neighbors: neighbors, LeaderNode: leaderNode}
+	resp := &message.ClusterJoinMessage{Acknowledged: true, Members: members, LeaderNode: leaderNode}
 	data, err := ser.Serialize(resp)
 	if err != nil {
 		slog.With(slog.String("op", op)).Error(fmt.Sprintf("error send join response: %s", err.Error()))
@@ -287,6 +287,7 @@ func (c *Cluster) removeInactiveNodes() {
 		}
 		if node.heartbeatMisses > uint8(c.cfg.MaxNodeHeartbeatMisses) {
 			if node.addr == c.leaderNode.addr {
+				c.leaderNode = nil
 				slog.With(slog.String("op", op)).Info(fmt.Sprintf("inactive leader node: %s, addr: %s", id, node.addr))
 			}
 			slog.With(slog.String("op", op)).Info(fmt.Sprintf("stop inactive node: %s, addr: %s", id, node.addr))
