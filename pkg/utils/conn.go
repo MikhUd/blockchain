@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"github.com/MikhUd/blockchain/pkg/stream"
 	"net"
 	"sync"
@@ -29,9 +30,11 @@ func CloseConn(saveTo ConnAble, connAddr string) error {
 		engine   = saveTo.GetEngine()
 	)
 	mu.Lock()
+	fmt.Println("CLOSE TCP CONN:", connAddr)
 	defer mu.Unlock()
 	if conn, ok := connPool[connAddr]; ok == true {
-		if err := conn.Close(); err == nil {
+		err := conn.Close()
+		if err == nil {
 			if writer := engine.GetWriter(connAddr); writer != nil {
 				writer.Shutdown()
 			}

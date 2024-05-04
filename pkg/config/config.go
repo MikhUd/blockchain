@@ -13,15 +13,19 @@ type Config struct {
 	MiningDifficulty           uint8   `mapstructure:"mining_difficulty" yaml:"mining_difficulty" env-required:"true"`
 	MiningTimerSec             int     `mapstructure:"mining_timer_sec" yaml:"mining_timer_sec" env-required:"true"`
 	NodesCount                 int     `mapstructure:"nodes_count" yaml:"nodes_count"`
-	MaxNodeHeartbeatMisses     int     `mapstructure:"max_node_heartbeat_misses" yaml:"max_node_heartbeat_misses" env-required:"true"`
+	MaxMemberHeartbeatMisses   uint8   `mapstructure:"max_member_heartbeat_misses" yaml:"max_member_heartbeat_misses" env-required:"true"`
 	MaxClusterHeartbeatMisses  uint8   `mapstructure:"max_cluster_heartbeat_misses" yaml:"max_cluster_heartbeat_misses" env-required:"true"`
 	MemberJoinTimeout          int     `mapstructure:"member_join_timeout" yaml:"member_join_timeout" env-required:"true"`
 	HeartBeatTimeout           int     `mapstructure:"heartbeat_timeout" yaml:"heartbeat_timeout" env-required:"true"`
-	NodeHeartbeatIntervalMs    int     `mapstructure:"node_heartbeat_interval_ms" yaml:"node_heartbeat_interval" env-required:"true"`
-	ClusterHeartbeatIntervalMs int     `mapstructure:"cluster_heartbeat_interval_ms" yaml:"node_heartbeat_interval" env-required:"true"`
-	MinLeaderElectionMs        int     `mapstructure:"min_leader_election_ms" yaml:"node_heartbeat_interval" env-required:"true"`
-	MaxLeaderElectionMs        int     `mapstructure:"max_leader_election_ms" yaml:"node_heartbeat_interval" env-required:"true"`
-	NodeRecoverTimeout         int     `mapstructure:"node_recover_timeout_ms" yaml:"node_recover_timeout_ms" env-required:"true"`
+	MemberHeartbeatIntervalMs  int     `mapstructure:"member_heartbeat_interval_ms" yaml:"member_heartbeat_interval" env-required:"true"`
+	ClusterHeartbeatIntervalMs int     `mapstructure:"cluster_heartbeat_interval_ms" yaml:"cluster_heartbeat_interval" env-required:"true"`
+	MinLeaderElectionMs        int     `mapstructure:"min_leader_election_ms" yaml:"min_leader_election_ms" env-required:"true"`
+	MaxLeaderElectionMs        int     `mapstructure:"max_leader_election_ms" yaml:"max_leader_election_ms" env-required:"true"`
+	MemberRecoverTimeout       int     `mapstructure:"member_recover_timeout_ms" yaml:"member_recover_timeout_ms" env-required:"true"`
+	MaxClusterJoinAttempts     uint8   `mapstructure:"max_cluster_join_attempts" yaml:"max_cluster_join_attempts" env-required:"true"`
+	MaxMemberRecoverMisses     uint8   `mapstructure:"max_member_recover_misses" yaml:"max_member_recover_misses" env-required:"true"`
+	MemberRecoverIntervalMs    int     `mapstructure:"member_recover_interval_ms" yaml:"member_recover_interval_ms" env-required:"true"`
+	MemberTimeoutSec           int     `mapstructure:"member_timeout_sec" yaml:"member_timeout_sec" env-required:"true"`
 }
 
 func MustLoad(path string) *Config {

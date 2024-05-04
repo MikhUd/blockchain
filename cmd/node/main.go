@@ -4,10 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"github.com/MikhUd/blockchain/pkg/config"
+	"github.com/MikhUd/blockchain/pkg/consts"
 	"github.com/MikhUd/blockchain/pkg/domain/blockchain"
 	"github.com/MikhUd/blockchain/pkg/node"
 	"log"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 )
 
@@ -18,6 +21,9 @@ var (
 )
 
 func main() {
+	go func() {
+		http.ListenAndServe("localhost:6061", nil)
+	}()
 	flag.Parse()
 	cfg := config.MustLoad(*configPath)
 	hostStr := os.Getenv("HOST")
@@ -25,12 +31,12 @@ func main() {
 	if hostStr != "" && portStr != "" {
 		*nodePort = net.JoinHostPort(hostStr, portStr)
 	}
-	if cfg.Env == config.EnvDev {
+	if cfg.Env == consts.EnvDev {
 		*clusterPort = fmt.Sprintf("cluster%s", *clusterPort)
 	}
 	bc := blockchain.New(*cfg)
-	n := node.New(*nodePort, *clusterPort, bc, *cfg)
-	if err := n.Start(); err != nil {
+	n := node.New(*nodePort, bc, *cfg)
+	if err := n.Start(*clusterPort); err != nil {
 		log.Fatal(err)
 	}
 }

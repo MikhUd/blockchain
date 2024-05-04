@@ -8,9 +8,10 @@ import (
 	"github.com/MikhUd/blockchain/pkg/config"
 	clusterContext "github.com/MikhUd/blockchain/pkg/context"
 	"github.com/MikhUd/blockchain/pkg/serializer"
+	"github.com/MikhUd/blockchain/pkg/status"
 	"github.com/MikhUd/blockchain/pkg/stream"
 	"github.com/MikhUd/blockchain/pkg/utils"
-	"log"
+	"github.com/MikhUd/blockchain/pkg/waitgroup"
 	"log/slog"
 	"net"
 	"os"
@@ -30,7 +31,7 @@ type Cluster struct {
 	cancel     context.CancelFunc
 	stopCh     chan struct{}
 	reader     *stream.Reader
-	wg         *sync.WaitGroup
+	wg         *waitgroup.WaitGroup
 	leaderNode *nodeInfo
 	nodes      map[string]*nodeInfo
 	state      atomic.Uint32
@@ -38,6 +39,7 @@ type Cluster struct {
 	nodesMutex sync.RWMutex
 	mu         sync.RWMutex
 	connPool   map[string]net.Conn
+	ln         net.Listener
 }
 
 type nodeInfo struct {
@@ -55,15 +57,19 @@ func New(cfg config.Config, addr string) *Cluster {
 		cfg:      cfg,
 		ctx:      ctx,
 		cancel:   cancel,
-		stopCh:   make(chan struct{}),
-		wg:       &sync.WaitGroup{},
+		stopCh:   make(chan struct{}, 1),
+		wg:       &waitgroup.WaitGroup{},
 		nodes:    make(map[string]*nodeInfo),
 		connPool: make(map[string]net.Conn),
 	}
 	c.reader = stream.NewReader(c)
-	c.state.Store(config.Initialized)
-	c.Engine = stream.NewEngine(nil)
+	c.state.Store(status.Initialized)
+	c.Engine = stream.NewEngine(addr)
 	return c
+}
+
+func (c *Cluster) GetAddr() string {
+	return c.addr
 }
 
 func (c *Cluster) WithTimeout(timeout time.Duration) *Cluster {
@@ -88,45 +94,57 @@ func (c *Cluster) Start() error {
 		op  = "cluster.Start"
 		err error
 	)
-	if c.state.Load() == config.Running {
+	fmt.Println("CLUSTER START")
+	if c.state.Load() == status.Running {
 		slog.With(slog.String("op", op)).Error("cluster already running")
 		return fmt.Errorf("cluster already running")
 	}
-	c.state.Store(config.Running)
-	c.wg.Add(1)
-	listener, err := net.Listen("tcp", c.addr)
+	c.ln, err = net.Listen("tcp", c.addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen")
 	}
 	mux := drpcmux.New()
 	server := drpcserver.New(mux)
 	err = remote.DRPCRegisterRemote(mux, c.reader)
+	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		err = server.Serve(c.ctx, listener)
+		err = server.Serve(c.ctx, c.ln)
 		if err != nil {
 			slog.With(slog.String("op", op)).Error(fmt.Sprintf("listener serve error: %s", err))
 		} else {
 			slog.With(slog.String("op", op)).Debug("server stopped")
 		}
+		fmt.Println("wgggg123 done")
 	}()
-	if _, deadline := c.ctx.Deadline(); deadline == true {
-		go c.checkDeadline()
+	if _, dl := c.ctx.Deadline(); dl == true {
+		go func() {
+			c.checkDeadline()
+		}()
 	}
-	go c.manageNodes()
+	go func() {
+		c.manageNodes()
+	}()
 	slog.With(slog.String("op", op)).Info(fmt.Sprintf("start cluster, addr: %s", c.addr))
+	c.state.Store(status.Running)
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	for {
 		select {
 		case <-stop:
-			if err = c.stop(); err != nil {
-				slog.With(slog.String("op", op)).Error(fmt.Sprintf("error stopping cluster: %s", err.Error()))
+			fmt.Println("STOP TRIGG")
+			if c.state.Load() != status.Stopped {
+				if err = c.stop(); err != nil {
+					slog.With(slog.String("op", op)).Error(fmt.Sprintf("error stopping cluster: %s", err.Error()))
+				}
 			}
 			return err
 		case <-c.stopCh:
-			if err = c.stop(); err != nil {
-				slog.With(slog.String("op", op)).Error(fmt.Sprintf("error stopping cluster: %s", err.Error()))
+			fmt.Println("STOPCH TRIGG")
+			if c.state.Load() != status.Stopped {
+				if err = c.stop(); err != nil {
+					slog.With(slog.String("op", op)).Error(fmt.Sprintf("error stopping cluster: %s", err.Error()))
+				}
 			}
 			return err
 		}
@@ -137,17 +155,24 @@ func (c *Cluster) checkDeadline() {
 	for {
 		select {
 		case <-c.ctx.Done():
-			c.stopCh <- struct{}{}
+			fmt.Println("DEADLINE EXPIRED")
+			c.stop()
+			return
 		}
 	}
 }
 
 func (c *Cluster) stop() error {
 	var op = "cluster.stop"
-	if c.state.Load() != config.Running {
-		slog.With(slog.String("op", op)).Warn(fmt.Sprintf("cluster: %s already stopped", c.addr))
+	fmt.Println("CLUSTER STOP")
+	if c.state.Load() != status.Running {
+		return fmt.Errorf(fmt.Sprintf("cluster: %s already stopped", c.addr))
 	}
-	c.state.Store(config.Stopped)
+	c.state.Store(status.Stopped)
+	close(c.stopCh)
+	c.ln.Close()
+	c.wg.Wait()
+	fmt.Println("WG DONE")
 	slog.With(slog.String("op", op)).Info(fmt.Sprintf("cluster: %s stopped", c.addr))
 	return nil
 }
@@ -157,18 +182,10 @@ func (c *Cluster) Receive(ctx *clusterContext.Context) error {
 		op  = "cluster.Receive"
 		err error
 	)
-	if c.state.Load() != config.Running {
-		go func() {
-			if err = c.Start(); err != nil {
-				slog.With(slog.String("op", op)).Error(fmt.Sprintf("got cluster receive error: %s", err.Error()))
-				log.Fatal(err)
-			}
-		}()
-	}
 	switch msg := ctx.Msg().(type) {
 	case *message.JoinMessage:
 		go func() {
-			if err := c.handleJoin(msg, ctx); err != nil {
+			if err = c.handleJoin(msg, ctx); err != nil {
 				slog.With(slog.String("op", op)).Error(fmt.Sprintf("handle join error: %s", err.Error()))
 			}
 		}()
@@ -178,7 +195,7 @@ func (c *Cluster) Receive(ctx *clusterContext.Context) error {
 		}
 	case *message.SetLeaderMessage:
 		go func() {
-			if err := c.handleSetLeader(msg, ctx); err != nil {
+			if err = c.handleSetLeader(msg, ctx); err != nil {
 				slog.With(slog.String("op", op)).Error(fmt.Sprintf("handle setLeader error: %s", err.Error()))
 			}
 		}()
@@ -196,6 +213,9 @@ func (c *Cluster) handleJoin(msg *message.JoinMessage, ctx *clusterContext.Conte
 		leaderNode *message.PID
 	)
 	slog.With(slog.String("op", op)).Info(fmt.Sprintf("cluster received join: %s", remoteAddr))
+	if _, ok := c.connPool[remoteAddr]; ok {
+		utils.CloseConn(c, remoteAddr)
+	}
 	conn, err := net.Dial("tcp", remoteAddr)
 	if err != nil {
 		slog.With(slog.String("op", op)).Error(fmt.Sprintf("member join error: %s", err.Error()))
@@ -206,12 +226,12 @@ func (c *Cluster) handleJoin(msg *message.JoinMessage, ctx *clusterContext.Conte
 		return err
 	}
 	for id, node := range c.nodes {
-		if node.state.Load() == config.Active {
+		if node.state.Load() == status.Running {
 			members = append(members, &message.PID{Id: id, Addr: node.addr})
 		}
 	}
 	node := &nodeInfo{addr: remoteAddr, heartbeatMisses: 0}
-	node.state.Store(config.Active)
+	node.state.Store(status.Running)
 	c.nodes[remoteId] = node
 	if c.leaderNode != nil {
 		leaderNode = &message.PID{Addr: c.leaderNode.addr}
@@ -223,7 +243,6 @@ func (c *Cluster) handleJoin(msg *message.JoinMessage, ctx *clusterContext.Conte
 		return err
 	}
 	msg = &message.JoinMessage{Remote: &message.PID{Addr: c.addr}, Data: data, TypeName: ser.TypeName(resp)}
-	c.Engine.AddWriter(stream.NewWriter(remoteAddr))
 	ctx = clusterContext.New(msg).WithParent(ctx).WithReceiver(&message.PID{Addr: remoteAddr})
 	err = c.Engine.Send(ctx)
 	utils.SaveConn(c, remoteAddr, conn)
@@ -253,7 +272,6 @@ func (c *Cluster) handleHeartbeat(msg *message.HeartbeatMessage, ctx *clusterCon
 		acknowledged = true
 	}
 	resp := &message.HeartbeatMessage{Remote: &message.PID{Addr: c.addr}, Acknowledged: acknowledged}
-	c.Engine.AddWriter(stream.NewWriter(remoteAddr))
 	ctx = clusterContext.New(resp).WithParent(ctx).WithReceiver(&message.PID{Addr: remoteAddr})
 	err = c.Engine.Send(ctx)
 	if err != nil {
@@ -265,13 +283,13 @@ func (c *Cluster) handleHeartbeat(msg *message.HeartbeatMessage, ctx *clusterCon
 func (c *Cluster) manageNodes() {
 	c.wg.Add(1)
 	defer c.wg.Done()
-	ticker := time.NewTicker(time.Millisecond * time.Duration(c.cfg.NodeHeartbeatIntervalMs))
+	ticker := time.NewTicker(time.Millisecond * time.Duration(c.cfg.MemberHeartbeatIntervalMs))
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
 			c.removeInactiveNodes()
-		case <-c.ctx.Done():
+		case <-c.stopCh:
 			return
 		}
 	}
@@ -282,16 +300,16 @@ func (c *Cluster) removeInactiveNodes() {
 	c.nodesMutex.Lock()
 	defer c.nodesMutex.Unlock()
 	for id, node := range c.nodes {
-		if node.state.Load() != config.Active {
+		if node.state.Load() != status.Running {
 			continue
 		}
-		if node.heartbeatMisses > uint8(c.cfg.MaxNodeHeartbeatMisses) {
-			if node.addr == c.leaderNode.addr {
+		if node.heartbeatMisses > c.cfg.MaxMemberHeartbeatMisses {
+			if c.leaderNode != nil && node.addr == c.leaderNode.addr {
 				c.leaderNode = nil
 				slog.With(slog.String("op", op)).Info(fmt.Sprintf("inactive leader node: %s, addr: %s", id, node.addr))
 			}
 			slog.With(slog.String("op", op)).Info(fmt.Sprintf("stop inactive node: %s, addr: %s", id, node.addr))
-			node.state.Store(config.Inactive)
+			node.state.Store(status.Stopped)
 			_ = utils.CloseConn(c, node.addr)
 		} else {
 			node.heartbeatMisses++

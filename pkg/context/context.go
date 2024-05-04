@@ -46,8 +46,3 @@ func (c *Context) WithReceiver(r *message.PID) *Context {
 	c.receiver = r
 	return c
 }
-
-func (c *Context) WithMsg(msg any) *Context {
-	c.msg = msg
-	return c
-}

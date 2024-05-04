@@ -5,6 +5,8 @@ import (
 	"github.com/MikhUd/blockchain/pkg/cluster"
 	"github.com/MikhUd/blockchain/pkg/config"
 	"log/slog"
+	"net/http"
+	_ "net/http/pprof"
 )
 
 var (
@@ -13,6 +15,9 @@ var (
 )
 
 func main() {
+	go func() {
+		http.ListenAndServe("localhost:6060", nil)
+	}()
 	flag.Parse()
 	cfg := config.MustLoad(*configPath)
 	c := cluster.New(*cfg, *clusterPort)
