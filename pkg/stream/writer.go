@@ -63,6 +63,20 @@ func (w *Writer) Addr() string {
 }
 
 func (w *Writer) init(addr string) error {
+	if w.dconn == nil {
+		return w.initConn(addr)
+	}
+	select {
+	case <-w.dconn.Closed():
+		w.Shutdown()
+		//TODO: implement tls
+		return w.initConn(addr)
+	default:
+		return nil
+	}
+}
+
+func (w *Writer) initConn(addr string) error {
 	var (
 		err        error
 		conn       net.Conn
@@ -70,33 +84,26 @@ func (w *Writer) init(addr string) error {
 		delay      = time.Millisecond * 500
 		maxRetries = 3
 	)
-	select {
-	case <-w.dconn.Closed():
-		w.Shutdown()
-		//TODO: implement tls
-		for i := 0; i < maxRetries; i++ {
-			rDelay := delay * time.Duration(i*2)
-			conn, err = net.Dial("tcp", addr)
-			if err != nil {
-				time.Sleep(rDelay)
-				continue
-			}
-			break
-		}
-		w.conn = conn
-		dconn := drpcconn.New(conn)
-		client := remote.NewDRPCRemoteClient(dconn)
-		stream, err := client.Receive(context.Background())
+	for i := 0; i < maxRetries; i++ {
+		rDelay := delay * time.Duration(i*2)
+		conn, err = net.Dial("tcp", addr)
 		if err != nil {
-			slog.With(slog.String("op", op)).Error(fmt.Sprintf("dconn creating stream error: %s", err.Error()))
-			return err
+			time.Sleep(rDelay)
+			continue
 		}
-		w.dconn = dconn
-		w.stream = stream
-		return nil
-	default:
-		return nil
+		break
 	}
+	w.conn = conn
+	dconn := drpcconn.New(conn)
+	client := remote.NewDRPCRemoteClient(dconn)
+	stream, err := client.Receive(context.Background())
+	if err != nil {
+		slog.With(slog.String("op", op)).Error(fmt.Sprintf("dconn creating stream error: %s", err.Error()))
+		return err
+	}
+	w.dconn = dconn
+	w.stream = stream
+	return nil
 }
 
 func (w *Writer) Shutdown() {

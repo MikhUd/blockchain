@@ -2,9 +2,7 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"github.com/MikhUd/blockchain/pkg/config"
-	"github.com/MikhUd/blockchain/pkg/consts"
 	"github.com/MikhUd/blockchain/pkg/domain/blockchain"
 	"github.com/MikhUd/blockchain/pkg/node"
 	"log"
@@ -15,9 +13,8 @@ import (
 )
 
 var (
-	nodePort    = flag.String("node_port", "", "node port")
-	clusterPort = flag.String("cluster_port", "", "cluster port")
-	configPath  = flag.String("config_path", "", "path to local config")
+	nodePort   = flag.String("node_port", "", "node port")
+	configPath = flag.String("config_path", "", "path to local config")
 )
 
 func main() {
@@ -31,12 +28,13 @@ func main() {
 	if hostStr != "" && portStr != "" {
 		*nodePort = net.JoinHostPort(hostStr, portStr)
 	}
-	if cfg.Env == consts.EnvDev {
-		*clusterPort = fmt.Sprintf("cluster%s", *clusterPort)
-	}
 	bc := blockchain.New(*cfg)
-	n := node.New(*nodePort, bc, *cfg)
-	if err := n.Start(*clusterPort); err != nil {
+	n, err := node.New(*nodePort, bc, *cfg)
+	if err != nil {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+	if err := n.Start(); err != nil {
 		log.Fatal(err)
 	}
 }

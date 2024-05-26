@@ -17,7 +17,6 @@ message BlockchainMessage {
 message JoinMessage {
   PID remote = 1;
   bytes data = 2;
-  string typeName = 3;
 }
 
 message TestMessage {
@@ -35,16 +34,6 @@ message TransactionRequest {
 message HeartbeatMessage {
   PID remote = 1;
   bool acknowledged = 2;
-}
-
-message ClusterJoinMessage {
-  bool acknowledged = 1;
-  repeated PID members = 2;
-  PID leaderNode = 3;
-}
-
-message NodeJoinMessage {
-  bool acknowledged = 1;
 }
 
 message ElectionMessage {

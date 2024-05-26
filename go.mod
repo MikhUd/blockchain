@@ -5,6 +5,7 @@ go 1.22.2
 require (
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/gocql/gocql v1.6.0
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v4 v4.18.1
 	github.com/planetscale/vtprotobuf v0.6.0
 	github.com/spf13/viper v1.18.2
@@ -18,6 +19,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/golang/snappy v0.0.3 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
@@ -42,7 +44,7 @@ require (
 	github.com/zeebo/errs v1.2.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
-	golang.org/x/sys v0.16.0 // indirect
+	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect

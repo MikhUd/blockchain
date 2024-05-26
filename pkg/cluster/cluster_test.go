@@ -32,7 +32,7 @@ func TestClusterAppendNodes(t *testing.T) {
 		return
 	}()
 	bc := blockchain.New(cfg)
-	n := node.New(nodeAddr, bc, cfg).WithTimeout(time.Second * 1)
+	n, _ := node.New(nodeAddr, bc, cfg).WithTimeout(time.Second * 1)
 	err = n.Start(clusterAddr)
 	lenNodes := len(c.nodes)
 	assert.Equal(t, 1, lenNodes)

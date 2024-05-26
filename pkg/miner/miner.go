@@ -32,15 +32,6 @@ func (m *Miner) Mining() bool {
 	m.bc.CreateBlock(nonce, previousHash)
 
 	log.Println("action=finish_mining")
-
-	/*
-		for _, n := range m.blockchain.Neighbors() {
-			endpoint := fmt.Sprintf("http://%s/consensus", n)
-			client := &http.Client{}
-			req, _ := http.NewRequest("PUT", endpoint, nil)
-			_, _ = client.Do(req)
-		}
-	*/
 	return true
 }
 

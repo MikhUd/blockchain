@@ -18,9 +18,11 @@ func NewEngine(sender string) *Engine {
 }
 
 func (e *Engine) Send(ctx *context.Context) error {
-	var op = "engine.Send"
-	e.addWriter(ctx.Receiver().GetAddr())
-	addr := ctx.Receiver().GetAddr()
+	var (
+		op   = "engine.Send"
+		addr = ctx.Receiver().GetAddr()
+	)
+	e.addWriter(addr)
 	if len(e.writers) == 0 {
 		slog.With(slog.String("op", op)).Error("empty writers")
 		return fmt.Errorf("no writers available")
