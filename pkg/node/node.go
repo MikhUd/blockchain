@@ -2,8 +2,11 @@ package node
 
 import (
 	"context"
-	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"github.com/MikhUd/blockchain/pkg/api/message"
 	"github.com/MikhUd/blockchain/pkg/api/remote"
@@ -31,6 +34,8 @@ import (
 	"time"
 )
 
+const AckMsg = "ACK"
+
 type Node struct {
 	id         string
 	addr       string
@@ -48,8 +53,7 @@ type Node struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	raft       raft.IRaft
-	publicKey  *ecdsa.PublicKey
-	privateKey *ecdsa.PrivateKey
+	privateKey *rsa.PrivateKey
 	registry   *discovery.Registry
 }
 
@@ -68,7 +72,7 @@ func New(addr string, bc *blockchain.Blockchain, cfg config.Config) (*Node, erro
 		engine: stream.NewEngine(addr),
 	}
 	n.status.Store(status.Initialized)
-	n.privateKey, n.publicKey, err = utils.GenerateKeyPair()
+	n.privateKey, err = rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +146,13 @@ func (n *Node) Start() error {
 	}()
 
 	// Регистрация в реестре
-	if err = n.registry.RegisterMember(n.ctx, n.id, n.addr, utils.PublicKeyStr(n.publicKey)); err != nil {
+	pubKey := &n.privateKey.PublicKey
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(pubKey)
+	publicKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	})
+	if err = n.registry.RegisterMember(n.ctx, n.id, n.addr, string(publicKeyPEM)); err != nil {
 		slog.Error(fmt.Sprintf("error registering node %s: %v", n.addr, err))
 		n.stopCh <- struct{}{}
 	}
@@ -207,22 +217,40 @@ func (n *Node) Receive(ctx *clusterContext.Context) error {
 	var err error
 	switch msg := ctx.Msg().(type) {
 	case *message.TransactionRequest:
-		err = n.AddTransaction(msg)
+		err = n.addTransaction(msg)
 	case *message.JoinMessage:
-
+		err = n.handleJoin(msg)
 	}
 	return err
 }
 
-func (n *Node) AddTransaction(tr *message.TransactionRequest) error {
-	publicKey := utils.PublicKeyFromString(tr.SenderPublicKey)
-	privateKey := utils.PrivateKeyFromString(tr.SenderPrivateKey, publicKey)
-	signature, err := utils.GenerateTransactionSignature(tr.SenderBlockchainAddress, privateKey, tr.RecipientBlockchainAddress, tr.Value)
+func (n *Node) addTransaction(msg *message.TransactionRequest) error {
+	publicKey := utils.PublicECDSAKeyFromString(msg.SenderPublicKey)
+	privateKey := utils.PrivateKeyFromString(msg.SenderPrivateKey, publicKey)
+	signature, err := utils.GenerateTransactionSignature(msg.SenderBlockchainAddress, privateKey, msg.RecipientBlockchainAddress, msg.Value)
 	if err != nil {
 		return err
 	}
-	_ = n.bc.CreateTransaction(tr.SenderBlockchainAddress, tr.RecipientBlockchainAddress, tr.Value, publicKey, signature)
+	_ = n.bc.CreateTransaction(msg.SenderBlockchainAddress, msg.RecipientBlockchainAddress, msg.Value, publicKey, signature)
 	return nil
+}
+
+func (n *Node) handleJoin(msg *message.JoinMessage) error {
+	var (
+		err     error
+		rawData = msg.GetData()
+	)
+	member, err := n.registry.GetMember(n.ctx, msg.GetRemote().GetId())
+	if err != nil || member == nil {
+		return fmt.Errorf(fmt.Sprintf("member not found, id: %s", msg.GetRemote().GetId()))
+	}
+	decodedData, err := rsa.DecryptPKCS1v15(rand.Reader, n.privateKey, rawData)
+	if err != nil || string(decodedData) != AckMsg {
+		return fmt.Errorf(fmt.Sprintf("illegal member join request, declined, id: %s", msg.GetRemote().GetId()))
+	}
+	slog.Info(fmt.Sprintf("member join approval: %s", msg.GetRemote().GetId()))
+
+	return err
 }
 
 func (n *Node) GetAddr() string {

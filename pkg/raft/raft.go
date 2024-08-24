@@ -3,6 +3,7 @@ package raft
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/rsa"
 	"github.com/MikhUd/blockchain/pkg/config"
 	discovery "github.com/MikhUd/blockchain/pkg/service_discovery"
 	"github.com/MikhUd/blockchain/pkg/utils"
@@ -18,16 +19,15 @@ const (
 type ICluster interface {
 	Start() error
 	Stop() error
-	AddMember(id string, addr string, publicKey *ecdsa.PublicKey) error
+	AddMember(id string, addr string, publicKey *rsa.PublicKey) error
 	RemoveMember(id string) error
-	GetMembers() []*Member
 	GetLeaderID() string
+	HandleJoin(member Member) error
 }
 
 type IRaft interface {
 	Start() error
 	Stop(ctx context.Context, id string) error
-	GetCluster() ICluster
 }
 
 type Raft struct {
@@ -52,9 +52,9 @@ func (r *Raft) Start() error {
 }
 
 func (r *Raft) Stop(ctx context.Context, id string) error {
-	return r.cluster.Stop()
+	return nil
 }
 
-func (r *Raft) GetCluster() ICluster {
-	return r.cluster
+func (r *Raft) AddMember(id string, addr string, publicKey *ecdsa.PublicKey) error {
+	return nil
 }

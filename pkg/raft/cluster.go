@@ -2,7 +2,8 @@ package raft
 
 import (
 	"context"
-	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -10,13 +11,13 @@ import (
 	"github.com/MikhUd/blockchain/pkg/config"
 	"github.com/MikhUd/blockchain/pkg/consts"
 	clusterContext "github.com/MikhUd/blockchain/pkg/context"
+	"github.com/MikhUd/blockchain/pkg/node"
 	"github.com/MikhUd/blockchain/pkg/serializer"
 	discovery "github.com/MikhUd/blockchain/pkg/service_discovery"
 	"github.com/MikhUd/blockchain/pkg/status"
 	"github.com/MikhUd/blockchain/pkg/stream"
 	"github.com/MikhUd/blockchain/pkg/utils"
 	"github.com/MikhUd/blockchain/pkg/waitgroup"
-	"github.com/google/uuid"
 	"log/slog"
 	"net"
 	"sync"
@@ -48,7 +49,7 @@ type Cluster struct {
 
 type Member struct {
 	addr                string
-	publicKey           *ecdsa.PublicKey
+	publicKey           *rsa.PublicKey
 	timestamp           int64
 	heartbeatMisses     uint8
 	maxHeartbeatMisses  uint8
@@ -99,14 +100,19 @@ func NewCluster(owner Owner, electionTime time.Duration, members []discovery.Mem
 
 func (c *Cluster) setupMembers(members []discovery.Member) error {
 	for i := 0; i < len(members); i++ {
-		if err := c.AddMember(uuid.New().String(), members[i].Address, utils.PublicKeyFromString(members[i].PublicKey)); err != nil {
+		pubKey, err := utils.PublicRSAKeyFromString(members[i].PublicKey)
+		if err != nil {
+			slog.Error(fmt.Sprintf("Member has invalid RSA public key!: %+v", err))
+			return err
+		}
+		if err = c.AddMember(members[i].Id, members[i].Address, pubKey); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (c *Cluster) AddMember(id, addr string, publicKey *ecdsa.PublicKey) error {
+func (c *Cluster) AddMember(id, addr string, publicKey *rsa.PublicKey) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(c.mainCfg.MemberTimeoutSec))
 	m := &Member{
 		addr:                addr,
@@ -140,7 +146,7 @@ func (c *Cluster) Start() error {
 				errCh := make(chan error, 1)
 				c.ackJoinWithMember(c.members[id], errCh)
 				if err := <-errCh; err != nil {
-					slog.Error("error join with member, member stopped", c.members[id], err)
+					slog.Error("error join with member, member stopped", c.members[id].addr, err)
 					c.members[id].status.CompareAndSwap(status.Initialized, status.Stopped)
 				}
 			}(id)
@@ -162,7 +168,7 @@ func (c *Cluster) startHeartbeatWithMember(member *Member) {
 		for {
 			select {
 			case <-c.owner.stopCh:
-				slog.With(slog.String("op", op)).Info(fmt.Sprintf("stop heartbeat, owner:%s stopped", c.owner))
+				slog.With(slog.String("op", op)).Info(fmt.Sprintf("stop heartbeat, owner:%s stopped", c.owner.addr))
 				return
 			case <-ticker.C:
 				go func() {
@@ -246,7 +252,7 @@ func (c *Cluster) tryToRecoverWithMember(member *Member) error {
 		case <-member.stopCh:
 			return fmt.Errorf(fmt.Sprintf("member is down, stop recovering, addr: %s", member.addr))
 		case <-c.owner.stopCh:
-			return fmt.Errorf(fmt.Sprintf("owner stopped: %s, abort recovering with member addr: %s", c.owner, member.addr))
+			return fmt.Errorf(fmt.Sprintf("owner stopped: %s, abort recovering with member addr: %s", c.owner.addr, member.addr))
 		}
 	}
 }
@@ -278,7 +284,12 @@ func (c *Cluster) dialWithMember(member *Member, msg any, timeout time.Duration)
 				}
 			}
 			if err == nil {
-				req := &message.JoinMessage{Remote: &message.PID{Id: c.owner.id, Addr: c.engine.Sender()}}
+				bytes, err := rsa.EncryptPKCS1v15(rand.Reader, member.publicKey, []byte(node.AckMsg))
+				if err != nil {
+					errorCh <- err
+					return
+				}
+				req := &message.JoinMessage{Remote: &message.PID{Id: c.owner.id, Addr: c.engine.Sender()}, Data: bytes}
 				if msg != nil {
 					data, err := ser.Serialize(msg)
 					if err != nil {
@@ -380,7 +391,7 @@ func (c *Cluster) election() error {
 			slog.With(slog.String("op", op)).Info(fmt.Sprintf("leader selected, stopping election on node: %s", c.owner.id))
 			return err
 		case <-c.owner.stopCh:
-			slog.With(slog.String("op", op)).Error(fmt.Sprintf("owner nodr stopped, addr: %s", c.owner))
+			slog.With(slog.String("op", op)).Error(fmt.Sprintf("owner nodr stopped, addr: %s", c.owner.addr))
 			return err
 		}
 	}
@@ -541,14 +552,6 @@ func (c *Cluster) RemoveMember(id string) error {
 	delete(c.members, id)
 	//TODO remove from discovery
 	return nil
-}
-
-func (c *Cluster) GetMembers() []*Member {
-	members := make([]*Member, 0, len(c.members))
-	for _, m := range c.members {
-		members = append(members, m)
-	}
-	return members
 }
 
 func (c *Cluster) GetLeaderID() string {

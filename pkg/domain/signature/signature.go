@@ -10,6 +10,14 @@ type Signature struct {
 	S *big.Int
 }
 
-func (signature *Signature) String() string {
-	return fmt.Sprintf("%064x%064x", signature.R, signature.S)
+func (s *Signature) String() string {
+	return fmt.Sprintf("%064x%064x", s.R, s.S)
+}
+
+func (s *Signature) Bytes() []byte {
+	return s.R.Bytes()
+}
+
+func (s *Signature) Equals(other *Signature) bool {
+	return s.R.Cmp(other.R) == 0 && s.S.Cmp(other.S) == 0
 }

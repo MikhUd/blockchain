@@ -30,7 +30,7 @@ func SignatureFromString(s string) *signature.Signature {
 	return &signature.Signature{R: &x, S: &y}
 }
 
-func PublicKeyFromString(s string) *ecdsa.PublicKey {
+func PublicECDSAKeyFromString(s string) *ecdsa.PublicKey {
 	x, y := String2BigIntTuple(s)
 	return &ecdsa.PublicKey{Curve: elliptic.P256(), X: &x, Y: &y}
 }

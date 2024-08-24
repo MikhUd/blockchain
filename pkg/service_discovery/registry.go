@@ -25,7 +25,7 @@ type Member struct {
 	Timestamp int64
 }
 
-func (r *Registry) RegisterMember(ctx context.Context, id, address, pubKey string) error {
+func (r *Registry) RegisterMember(ctx context.Context, id string, address string, pubKey string) error {
 	if !r.source.IsConnected() {
 		if err := r.source.Connect(ctx); err != nil {
 			return err
@@ -71,4 +71,20 @@ func (r *Registry) GetMembers(ctx context.Context) ([]Member, error) {
 		return nil, err
 	}
 	return members, nil
+}
+
+func (r *Registry) GetMember(ctx context.Context, id string) (*Member, error) {
+	if !r.source.IsConnected() {
+		if err := r.source.Connect(ctx); err != nil {
+			return nil, err
+		}
+	}
+	query := `SELECT * FROM ` + registryTable + ` WHERE id = ?`
+	member := &Member{}
+	if err := r.source.Query(ctx, query, id, member); err != nil {
+		if errors.Is(err, gocql.ErrNotFound) {
+			return nil, nil
+		}
+	}
+	return member, nil
 }
